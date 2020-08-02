@@ -10,10 +10,16 @@ type Template struct {
 	ID string `yaml:"id"`
 	// Info contains information about the template
 	Info Info `yaml:"info"`
-	// RequestHTTP contains the http request to make in the template
-	RequestsHTTP []*requests.HTTPRequest `yaml:"requests,omitempty"`
-	// RequestDNS contains the dns request to make in the template
+	// BulkRequestsHTTP contains the http request to make in the template
+	BulkRequestsHTTP []*requests.BulkHTTPRequest `yaml:"requests,omitempty"`
+	// RequestsDNS contains the dns request to make in the template
 	RequestsDNS []*requests.DNSRequest `yaml:"dns,omitempty"`
+	path        string
+}
+
+// GetPath of the workflow
+func (t *Template) GetPath() string {
+	return t.path
 }
 
 // Info contains information about the request template
@@ -26,4 +32,20 @@ type Info struct {
 	Severity string `yaml:"severity,omitempty"`
 	// Description optionally describes the template.
 	Description string `yaml:"description,omitempty"`
+}
+
+func (t *Template) GetHTTPRequestCount() int64 {
+	var count int64 = 0
+	for _, request := range t.BulkRequestsHTTP {
+		count += request.GetRequestCount()
+	}
+	return count
+}
+
+func (t *Template) GetDNSRequestCount() int64 {
+	var count int64 = 0
+	for _, request := range t.RequestsDNS {
+		count += request.GetRequestCount()
+	}
+	return count
 }

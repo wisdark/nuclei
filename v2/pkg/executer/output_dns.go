@@ -1,4 +1,4 @@
-package executor
+package executer
 
 import (
 	"strings"
@@ -6,21 +6,18 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"github.com/projectdiscovery/gologger"
 	"github.com/projectdiscovery/nuclei/v2/pkg/matchers"
-	"github.com/projectdiscovery/nuclei/v2/pkg/requests"
 )
 
-// writeOutputHTTP writes http output to streams
-func (e *HTTPExecutor) writeOutputHTTP(req *requests.CompiledHTTP, matcher *matchers.Matcher, extractorResults []string) {
-	URL := req.Request.URL.String()
-
+// writeOutputDNS writes dns output to streams
+func (e *DNSExecuter) writeOutputDNS(domain string, matcher *matchers.Matcher, extractorResults []string) {
 	if e.jsonOutput {
 		output := jsonOutput{
-			Template: e.template.ID,
-			Type:     "http",
-			Matched:  URL,
-			Severity: e.template.Info.Severity,
-			Author:   e.template.Info.Author,
-			Description:   e.template.Info.Description,
+			Template:    e.template.ID,
+			Type:        "dns",
+			Matched:     domain,
+			Severity:    e.template.Info.Severity,
+			Author:      e.template.Info.Author,
+			Description: e.template.Info.Description,
 		}
 		if matcher != nil && len(matcher.Name) > 0 {
 			output.MatcherName = matcher.Name
@@ -45,42 +42,31 @@ func (e *HTTPExecutor) writeOutputHTTP(req *requests.CompiledHTTP, matcher *matc
 	}
 
 	builder := &strings.Builder{}
+	colorizer := e.colorizer
 
 	builder.WriteRune('[')
-	builder.WriteString(e.template.ID)
+	builder.WriteString(colorizer.BrightGreen(e.template.ID).String())
 	if matcher != nil && len(matcher.Name) > 0 {
 		builder.WriteString(":")
-		builder.WriteString(matcher.Name)
+		builder.WriteString(colorizer.BrightGreen(matcher.Name).Bold().String())
 	}
-	builder.WriteString("] [http] ")
+	builder.WriteString("] [")
+	builder.WriteString(colorizer.BrightBlue("dns").String())
+	builder.WriteString("] ")
 
-	// Escape the URL by replacing all % with %%
-	escapedURL := strings.Replace(URL, "%", "%%", -1)
-	builder.WriteString(escapedURL)
+	builder.WriteString(domain)
 
 	// If any extractors, write the results
 	if len(extractorResults) > 0 {
 		builder.WriteString(" [")
 		for i, result := range extractorResults {
-			builder.WriteString(result)
+			builder.WriteString(colorizer.BrightCyan(result).String())
 			if i != len(extractorResults)-1 {
 				builder.WriteRune(',')
 			}
 		}
 		builder.WriteString("]")
 	}
-
-	// write meta if any
-	if len(req.Meta) > 0 {
-		builder.WriteString(" [")
-		var metas []string
-		for name, value := range req.Meta {
-			metas = append(metas, name+"="+value.(string))
-		}
-		builder.WriteString(strings.Join(metas, ","))
-		builder.WriteString("]")
-	}
-
 	builder.WriteRune('\n')
 
 	// Write output to screen as well as any output file
@@ -89,6 +75,9 @@ func (e *HTTPExecutor) writeOutputHTTP(req *requests.CompiledHTTP, matcher *matc
 
 	if e.writer != nil {
 		e.outputMutex.Lock()
+		if e.coloredOutput {
+			message = e.decolorizer.ReplaceAllString(message, "")
+		}
 		e.writer.WriteString(message)
 		e.outputMutex.Unlock()
 	}
