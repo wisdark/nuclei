@@ -2,31 +2,37 @@ package generators
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
+	"math/rand"
 	"os"
 	"strings"
 )
+
+const two = 2
 
 // LoadPayloads creating proper data structure
 func LoadPayloads(payloads map[string]interface{}) map[string][]string {
 	loadedPayloads := make(map[string][]string)
 	// load all wordlists
 	for name, payload := range payloads {
-		switch payload.(type) {
+		switch pt := payload.(type) {
 		case string:
-			v := payload.(string)
-			elements := strings.Split(v, "\n")
-			if len(elements) >= 2 {
+			elements := strings.Split(pt, "\n")
+			if len(elements) >= two {
 				loadedPayloads[name] = elements
 			} else {
-				loadedPayloads[name] = LoadFile(v)
+				loadedPayloads[name] = LoadFile(pt)
 			}
 		case []interface{}, interface{}:
 			vv := payload.([]interface{})
+
 			var v []string
+
 			for _, vvv := range vv {
 				v = append(v, fmt.Sprintf("%v", vvv))
 			}
+
 			loadedPayloads[name] = v
 		}
 	}
@@ -49,7 +55,9 @@ func StreamFile(filepath string) (content chan string) {
 
 	go func() {
 		defer close(content)
+
 		file, err := os.Open(filepath)
+
 		if err != nil {
 			return
 		}
@@ -72,9 +80,11 @@ func StreamFile(filepath string) (content chan string) {
 // MergeMaps into a new one
 func MergeMaps(m1, m2 map[string]interface{}) (m map[string]interface{}) {
 	m = make(map[string]interface{})
+
 	for k, v := range m1 {
 		m[k] = v
 	}
+
 	for k, v := range m2 {
 		m[k] = v
 	}
@@ -88,6 +98,7 @@ func MergeMapsWithStrings(m1, m2 map[string]string) (m map[string]string) {
 	for k, v := range m1 {
 		m[k] = v
 	}
+
 	for k, v := range m2 {
 		m[k] = v
 	}
@@ -100,6 +111,7 @@ func reverseString(s string) string {
 	for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
 		runes[i], runes[j] = runes[j], runes[i]
 	}
+
 	return string(runes)
 }
 
@@ -109,6 +121,7 @@ func CopyMap(originalMap map[string]interface{}) map[string]interface{} {
 	for key, value := range originalMap {
 		newMap[key] = value
 	}
+
 	return newMap
 }
 
@@ -118,6 +131,7 @@ func CopyMapWithDefaultValue(originalMap map[string][]string, defaultValue inter
 	for key := range originalMap {
 		newMap[key] = defaultValue
 	}
+
 	return newMap
 }
 
@@ -143,5 +157,45 @@ func FileExists(filename string) bool {
 	if os.IsNotExist(err) {
 		return false
 	}
+
 	return !info.IsDir()
+}
+
+// TrimDelimiters removes trailing brackets
+func SliceContins(s []string, k string) bool {
+	for _, a := range s {
+		if a == k {
+			return true
+		}
+	}
+	return false
+}
+
+func TrimAll(s, cutset string) string {
+	for _, c := range cutset {
+		s = strings.ReplaceAll(s, string(c), "")
+	}
+	return s
+}
+
+func RandSeq(base string, n int) string {
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = rune(base[rand.Intn(len(base))])
+	}
+	return string(b)
+}
+
+func insertInto(s string, interval int, sep rune) string {
+	var buffer bytes.Buffer
+	before := interval - 1
+	last := len(s) - 1
+	for i, char := range s {
+		buffer.WriteRune(char)
+		if i%interval == before && i != last {
+			buffer.WriteRune(sep)
+		}
+	}
+	buffer.WriteRune(sep)
+	return buffer.String()
 }
