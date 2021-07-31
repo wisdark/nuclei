@@ -21,6 +21,7 @@ import (
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/common/tostring"
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/http/httpclientpool"
 	"github.com/projectdiscovery/rawhttp"
+	"github.com/projectdiscovery/stringsutil"
 	"github.com/remeh/sizedwaitgroup"
 	"go.uber.org/multierr"
 )
@@ -81,7 +82,7 @@ func (r *Request) executeRaceRequest(reqURL string, previous output.InternalEven
 }
 
 // executeRaceRequest executes parallel requests for a template
-func (r *Request) executeParallelHTTP(reqURL string, dynamicValues, previous output.InternalEvent, callback protocols.OutputEventCallback) error {
+func (r *Request) executeParallelHTTP(reqURL string, dynamicValues output.InternalEvent, callback protocols.OutputEventCallback) error {
 	generator := r.newGenerator()
 
 	// Workers that keeps enqueuing new requests
@@ -104,6 +105,8 @@ func (r *Request) executeParallelHTTP(reqURL string, dynamicValues, previous out
 			defer swg.Done()
 
 			r.options.RateLimiter.Take()
+
+			previous := make(map[string]interface{})
 			err := r.executeRequest(reqURL, httpRequest, previous, callback, 0)
 			mutex.Lock()
 			if err != nil {
@@ -117,7 +120,7 @@ func (r *Request) executeParallelHTTP(reqURL string, dynamicValues, previous out
 	return requestErr
 }
 
-// executeRaceRequest executes turbo http request for a URL
+// executeTurboHTTP executes turbo http request for a URL
 func (r *Request) executeTurboHTTP(reqURL string, dynamicValues, previous output.InternalEvent, callback protocols.OutputEventCallback) error {
 	generator := r.newGenerator()
 
@@ -190,7 +193,7 @@ func (r *Request) ExecuteWithResults(reqURL string, dynamicValues, previous outp
 
 	// verify if parallel elaboration was requested
 	if r.Threads > 0 {
-		return r.executeParallelHTTP(reqURL, dynamicValues, previous, callback)
+		return r.executeParallelHTTP(reqURL, dynamicValues, callback)
 	}
 
 	generator := r.newGenerator()
@@ -260,28 +263,19 @@ func (r *Request) executeRequest(reqURL string, request *generatedRequest, previ
 		err           error
 	)
 
-	// For race conditions we can't dump the request body at this point as it's already waiting the open-gate event, already handled with a similar code within the race function
-	if !request.original.Race {
-		dumpedRequest, err = dump(request, reqURL)
-		if err != nil {
-			return err
-		}
-
-		if r.options.Options.Debug || r.options.Options.DebugRequests {
-			gologger.Info().Msgf("[%s] Dumped HTTP request for %s\n\n", r.options.TemplateID, reqURL)
-			gologger.Print().Msgf("%s", string(dumpedRequest))
-		}
-	}
-
 	var formedURL string
 	var hostname string
 	timeStart := time.Now()
 	if request.original.Pipeline {
-		formedURL = request.rawRequest.FullURL
-		if parsed, parseErr := url.Parse(formedURL); parseErr == nil {
-			hostname = parsed.Host
+		if request.rawRequest != nil {
+			formedURL = request.rawRequest.FullURL
+			if parsed, parseErr := url.Parse(formedURL); parseErr == nil {
+				hostname = parsed.Host
+			}
+			resp, err = request.pipelinedClient.DoRaw(request.rawRequest.Method, reqURL, request.rawRequest.Path, generators.ExpandMapValues(request.rawRequest.Headers), ioutil.NopCloser(strings.NewReader(request.rawRequest.Data)))
+		} else if request.request != nil {
+			resp, err = request.pipelinedClient.Dor(request.request)
 		}
-		resp, err = request.pipelinedClient.DoRaw(request.rawRequest.Method, reqURL, request.rawRequest.Path, generators.ExpandMapValues(request.rawRequest.Headers), ioutil.NopCloser(strings.NewReader(request.rawRequest.Data)))
 	} else if request.original.Unsafe && request.rawRequest != nil {
 		formedURL = request.rawRequest.FullURL
 		if parsed, parseErr := url.Parse(formedURL); parseErr == nil {
@@ -307,6 +301,20 @@ func (r *Request) executeRequest(reqURL string, request *generatedRequest, previ
 			resp, err = r.httpClient.Do(request.request)
 		}
 	}
+
+	// For race conditions we can't dump the request body at this point as it's already waiting the open-gate event, already handled with a similar code within the race function
+	if !request.original.Race {
+		dumpedRequest, err = dump(request, reqURL)
+		if err != nil {
+			return err
+		}
+
+		if r.options.Options.Debug || r.options.Options.DebugRequests {
+			gologger.Info().Msgf("[%s] Dumped HTTP request for %s\n\n", r.options.TemplateID, reqURL)
+			gologger.Print().Msgf("%s", string(dumpedRequest))
+		}
+	}
+
 	if resp == nil {
 		err = errors.New("no response got for request")
 	}
@@ -343,7 +351,12 @@ func (r *Request) executeRequest(reqURL string, request *generatedRequest, previ
 	}
 	data, err := ioutil.ReadAll(bodyReader)
 	if err != nil {
-		return errors.Wrap(err, "could not read http body")
+		// Ignore body read due to server misconfiguration errors
+		if stringsutil.ContainsAny(err.Error(), "gzip: invalid header") {
+			gologger.Warning().Msgf("[%s] Server sent an invalid gzip header and it was not possible to read the uncompressed body for %s: %s", r.options.TemplateID, formedURL, err.Error())
+		} else if !stringsutil.ContainsAny(err.Error(), "unexpected EOF") { // ignore EOF error
+			return errors.Wrap(err, "could not read http body")
+		}
 	}
 	resp.Body.Close()
 
@@ -356,7 +369,11 @@ func (r *Request) executeRequest(reqURL string, request *generatedRequest, previ
 	// encoding has been specified by the user in the request so in case we have to
 	// manually do it.
 	dataOrig := data
-	data, _ = handleDecompression(resp, data)
+	data, err = handleDecompression(resp, data)
+	// in case of error use original data
+	if err != nil {
+		data = dataOrig
+	}
 
 	// Dump response - step 2 - replace gzip body with deflated one or with itself (NOP operation)
 	dumpedResponseBuilder := &bytes.Buffer{}
@@ -410,16 +427,14 @@ func (r *Request) executeRequest(reqURL string, request *generatedRequest, previ
 	}
 
 	event := &output.InternalWrappedEvent{InternalEvent: outputEvent}
-	if !interactsh.HasMatchers(r.CompiledOperators) {
-		if r.CompiledOperators != nil {
-			var ok bool
-			event.OperatorsResult, ok = r.CompiledOperators.Execute(finalEvent, r.Match, r.Extract)
-			if ok && event.OperatorsResult != nil {
-				event.OperatorsResult.PayloadValues = request.meta
-				event.Results = r.MakeResultEvent(event)
-			}
-			event.InternalEvent = outputEvent
+	if r.CompiledOperators != nil {
+		var ok bool
+		event.OperatorsResult, ok = r.CompiledOperators.Execute(finalEvent, r.Match, r.Extract)
+		if ok && event.OperatorsResult != nil {
+			event.OperatorsResult.PayloadValues = request.meta
+			event.Results = r.MakeResultEvent(event)
 		}
+		event.InternalEvent = outputEvent
 	}
 	callback(event)
 	return nil

@@ -3,6 +3,7 @@ package interactsh
 import (
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/karlseguin/ccache"
@@ -14,11 +15,11 @@ import (
 	"github.com/projectdiscovery/nuclei/v2/pkg/output"
 	"github.com/projectdiscovery/nuclei/v2/pkg/progress"
 	"github.com/projectdiscovery/nuclei/v2/pkg/reporting"
-	"github.com/valyala/fasttemplate"
 )
 
 // Client is a wrapped client for interactsh server.
 type Client struct {
+	dotHostname string
 	// interactsh is a client for interactsh server.
 	interactsh *client.Client
 	// requests is a stored cache for interactsh-url->request-event data.
@@ -27,11 +28,12 @@ type Client struct {
 	interactions *ccache.Cache
 
 	options          *Options
-	matched          bool
-	dotHostname      string
 	eviction         time.Duration
 	pollDuration     time.Duration
 	cooldownDuration time.Duration
+
+	generated uint32 // decide to wait if we have a generated url
+	matched   bool
 }
 
 var (
@@ -157,12 +159,13 @@ func (c *Client) processInteractionForRequest(interaction *server.Interaction, d
 
 // URL returns a new URL that can be interacted with
 func (c *Client) URL() string {
+	atomic.CompareAndSwapUint32(&c.generated, 0, 1)
 	return c.interactsh.URL()
 }
 
 // Close closes the interactsh clients after waiting for cooldown period.
 func (c *Client) Close() bool {
-	if c.cooldownDuration > 0 {
+	if c.cooldownDuration > 0 && atomic.LoadUint32(&c.generated) == 1 {
 		time.Sleep(c.cooldownDuration)
 	}
 	c.interactsh.StopPolling()
@@ -179,9 +182,7 @@ func (c *Client) ReplaceMarkers(data, interactshURL string) string {
 	if !strings.Contains(data, interactshURLMarker) {
 		return data
 	}
-	replaced := fasttemplate.ExecuteStringStd(data, "{{", "}}", map[string]interface{}{
-		"interactsh-url": interactshURL,
-	})
+	replaced := strings.NewReplacer("{{interactsh-url}}", interactshURL).Replace(data)
 	return replaced
 }
 

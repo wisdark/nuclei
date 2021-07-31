@@ -7,9 +7,9 @@ type Options struct {
 	// Tags contains a list of tags to execute templates for. Multiple paths
 	// can be specified with -l flag and -tags can be used in combination with
 	// the -l flag.
-	Tags goflags.StringSlice
+	Tags goflags.NormalizedStringSlice
 	// ExcludeTags is the list of tags to exclude
-	ExcludeTags goflags.StringSlice
+	ExcludeTags goflags.NormalizedStringSlice
 	// Workflows specifies any workflows to run by nuclei
 	Workflows goflags.StringSlice
 	// Templates specifies the template/templates to use
@@ -19,10 +19,15 @@ type Options struct {
 	// CustomHeaders is the list of custom global headers to send with each request.
 	CustomHeaders goflags.StringSlice
 	// Severity filters templates based on their severity and only run the matching ones.
-	Severity              goflags.StringSlice
+	Severity goflags.NormalizedStringSlice
+	// Author filters templates based on their author and only run the matching ones.
+	Author goflags.NormalizedStringSlice
+	// IncludeTags includes specified tags to be run even while being in denylist
+	IncludeTags goflags.NormalizedStringSlice
+	// IncludeTemplates includes specified templates to be run even while being in denylist
+	IncludeTemplates goflags.StringSlice
+
 	InternalResolversList []string // normalized from resolvers flag as well as file provided.
-	// BurpCollaboratorBiid is the Burp Collaborator BIID for polling interactions.
-	BurpCollaboratorBiid string
 	// ProjectPath allows nuclei to use a user defined project folder
 	ProjectPath string
 	// InteractshURL is the URL for the interactsh server.
@@ -47,6 +52,8 @@ type Options struct {
 	ReportingConfig string
 	// DiskExportDirectory is the directory to export reports in markdown on disk to
 	DiskExportDirectory string
+	// SarifExport is the file to export sarif output format to
+	SarifExport string
 	// ResolversFile is a file containing resolvers for nuclei.
 	ResolversFile string
 	// StatsInterval is the number of seconds to display stats after
@@ -79,6 +86,8 @@ type Options struct {
 	// using same matchers/extractors from http protocol without the need
 	// to send a new request, reading responses from a file.
 	OfflineHTTP bool
+	// StatsJSON writes stats output in JSON format
+	StatsJSON bool
 	// Headless specifies whether to allow headless mode templates
 	Headless bool
 	// ShowBrowser specifies whether the show the browser in headless mode
@@ -97,8 +106,11 @@ type Options struct {
 	Silent bool
 	// Version specifies if we should just show version and exit
 	Version bool
+	// Validate validates the templates passed to nuclei.
+	Validate bool
 	// Verbose flag indicates whether to show verbose output or not
-	Verbose bool
+	Verbose        bool
+	VerboseVerbose bool
 	// No-Color disables the colored output.
 	NoColor bool
 	// UpdateTemplates updates the templates installed at startup
@@ -125,4 +137,8 @@ type Options struct {
 	NewTemplates bool
 	// NoInteractsh disables use of interactsh server for interaction polling
 	NoInteractsh bool
+	// UpdateNuclei checks for an update for the nuclei engine
+	UpdateNuclei bool
+	// NoUpdateTemplates disables checking for nuclei templates updates
+	NoUpdateTemplates bool
 }
