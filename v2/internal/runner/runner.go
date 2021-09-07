@@ -4,23 +4,32 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/logrusorgru/aurora"
 	"github.com/pkg/errors"
+	"github.com/remeh/sizedwaitgroup"
+	"github.com/rs/xid"
+	"go.uber.org/atomic"
+	"go.uber.org/ratelimit"
+	"gopkg.in/yaml.v2"
+
 	"github.com/projectdiscovery/gologger"
 	"github.com/projectdiscovery/hmap/store/hybrid"
 	"github.com/projectdiscovery/nuclei/v2/internal/colorizer"
 	"github.com/projectdiscovery/nuclei/v2/pkg/catalog"
 	"github.com/projectdiscovery/nuclei/v2/pkg/catalog/config"
 	"github.com/projectdiscovery/nuclei/v2/pkg/catalog/loader"
+	"github.com/projectdiscovery/nuclei/v2/pkg/model/types/severity"
 	"github.com/projectdiscovery/nuclei/v2/pkg/output"
+	"github.com/projectdiscovery/nuclei/v2/pkg/parsers"
 	"github.com/projectdiscovery/nuclei/v2/pkg/progress"
 	"github.com/projectdiscovery/nuclei/v2/pkg/projectfile"
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols"
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/common/clusterer"
+	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/common/hosterrorscache"
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/common/interactsh"
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/common/protocolinit"
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/headless/engine"
@@ -29,11 +38,8 @@ import (
 	"github.com/projectdiscovery/nuclei/v2/pkg/reporting/exporters/sarif"
 	"github.com/projectdiscovery/nuclei/v2/pkg/templates"
 	"github.com/projectdiscovery/nuclei/v2/pkg/types"
-	"github.com/remeh/sizedwaitgroup"
-	"github.com/rs/xid"
-	"go.uber.org/atomic"
-	"go.uber.org/ratelimit"
-	"gopkg.in/yaml.v2"
+	"github.com/projectdiscovery/nuclei/v2/pkg/utils"
+	"github.com/projectdiscovery/nuclei/v2/pkg/utils/stats"
 )
 
 // Runner is a client for running the enumeration process.
@@ -49,9 +55,10 @@ type Runner struct {
 	progress        progress.Progress
 	colorizer       aurora.Aurora
 	issuesClient    *reporting.Client
-	severityColors  *colorizer.Colorizer
+	addColor        func(severity.Severity) string
 	browser         *engine.Browser
 	ratelimiter     ratelimit.Limiter
+	hostErrors      *hosterrorscache.Cache
 }
 
 // New creates a new client for running enumeration process.
@@ -65,6 +72,9 @@ func New(options *types.Options) (*Runner, error) {
 		}
 		return nil, nil
 	}
+	if options.Validate {
+		parsers.ShouldValidate = true
+	}
 	if err := runner.updateTemplates(); err != nil {
 		gologger.Warning().Msgf("Could not update templates: %s\n", err)
 	}
@@ -77,6 +87,166 @@ func New(options *types.Options) (*Runner, error) {
 	}
 
 	runner.catalog = catalog.New(runner.options.TemplatesDirectory)
+
+	reportingOptions, err := createReportingOptions(options)
+	if err != nil {
+		return nil, err
+	}
+	if reportingOptions != nil {
+		client, err := reporting.New(reportingOptions, options.ReportingDB)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not create issue reporting client")
+		}
+		runner.issuesClient = client
+	}
+
+	// output coloring
+	useColor := !options.NoColor
+	runner.colorizer = aurora.NewAurora(useColor)
+	runner.addColor = colorizer.New(runner.colorizer)
+
+	if options.TemplateList {
+		runner.listAvailableTemplates()
+		os.Exit(0)
+	}
+
+	if (len(options.Templates) == 0 || !options.NewTemplates || (options.TargetsFilePath == "" && !options.Stdin && len(options.Targets) == 0)) && options.UpdateTemplates {
+		os.Exit(0)
+	}
+	hm, err := hybrid.New(hybrid.DefaultDiskOptions)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not create temporary input file")
+	}
+	runner.hostMap = hm
+
+	runner.inputCount = 0
+	dupeCount := 0
+
+	// Handle multiple targets
+	if len(options.Targets) != 0 {
+		for _, target := range options.Targets {
+			url := strings.TrimSpace(target)
+			if url == "" {
+				continue
+			}
+
+			if _, ok := runner.hostMap.Get(url); ok {
+				dupeCount++
+				continue
+			}
+
+			runner.inputCount++
+			// nolint:errcheck // ignoring error
+			runner.hostMap.Set(url, nil)
+		}
+	}
+
+	// Handle stdin
+	if options.Stdin {
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			url := strings.TrimSpace(scanner.Text())
+			if url == "" {
+				continue
+			}
+
+			if _, ok := runner.hostMap.Get(url); ok {
+				dupeCount++
+				continue
+			}
+
+			runner.inputCount++
+			// nolint:errcheck // ignoring error
+			runner.hostMap.Set(url, nil)
+		}
+	}
+
+	// Handle target file
+	if options.TargetsFilePath != "" {
+		input, inputErr := os.Open(options.TargetsFilePath)
+		if inputErr != nil {
+			return nil, errors.Wrap(inputErr, "could not open targets file")
+		}
+		scanner := bufio.NewScanner(input)
+		for scanner.Scan() {
+			url := strings.TrimSpace(scanner.Text())
+			if url == "" {
+				continue
+			}
+			if _, ok := runner.hostMap.Get(url); ok {
+				dupeCount++
+				continue
+			}
+			runner.inputCount++
+			// nolint:errcheck // ignoring error
+			runner.hostMap.Set(url, nil)
+		}
+		input.Close()
+	}
+
+	if dupeCount > 0 {
+		gologger.Info().Msgf("Supplied input was automatically deduplicated (%d removed).", dupeCount)
+	}
+
+	// Create the output file if asked
+	outputWriter, err := output.NewStandardWriter(!options.NoColor, options.NoMeta, options.NoTimestamp, options.JSON, options.Output, options.TraceLogFile)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not create output file")
+	}
+	runner.output = outputWriter
+
+	if options.JSON && options.EnableProgressBar {
+		options.StatsJSON = true
+	}
+	if options.StatsJSON {
+		options.EnableProgressBar = true
+	}
+	// Creates the progress tracking object
+	var progressErr error
+	runner.progress, progressErr = progress.NewStatsTicker(options.StatsInterval, options.EnableProgressBar, options.StatsJSON, options.Metrics, options.MetricsPort)
+	if progressErr != nil {
+		return nil, progressErr
+	}
+
+	// create project file if requested or load existing one
+	if options.Project {
+		var projectFileErr error
+		runner.projectFile, projectFileErr = projectfile.New(&projectfile.Options{Path: options.ProjectPath, Cleanup: utils.IsBlank(options.ProjectPath)})
+		if projectFileErr != nil {
+			return nil, projectFileErr
+		}
+	}
+
+	if !options.NoInteractsh {
+		interactshClient, err := interactsh.New(&interactsh.Options{
+			ServerURL:      options.InteractshURL,
+			CacheSize:      int64(options.InteractionsCacheSize),
+			Eviction:       time.Duration(options.InteractionsEviction) * time.Second,
+			ColldownPeriod: time.Duration(options.InteractionsColldownPeriod) * time.Second,
+			PollDuration:   time.Duration(options.InteractionsPollDuration) * time.Second,
+			Output:         runner.output,
+			IssuesClient:   runner.issuesClient,
+			Progress:       runner.progress,
+			Debug:          runner.options.Debug,
+		})
+		if err != nil {
+			gologger.Error().Msgf("Could not create interactsh client: %s", err)
+		} else {
+			runner.interactsh = interactshClient
+		}
+	}
+
+	if options.RateLimitMinute > 0 {
+		runner.ratelimiter = ratelimit.New(options.RateLimitMinute, ratelimit.Per(60*time.Second))
+	} else if options.RateLimit > 0 {
+		runner.ratelimiter = ratelimit.New(options.RateLimit)
+	} else {
+		runner.ratelimiter = ratelimit.NewUnlimited()
+	}
+	return runner, nil
+}
+
+func createReportingOptions(options *types.Options) (*reporting.Options, error) {
 	var reportingOptions *reporting.Options
 	if options.ReportingConfig != "" {
 		file, err := os.Open(options.ReportingConfig)
@@ -107,141 +277,7 @@ func New(options *types.Options) (*Runner, error) {
 			reportingOptions.SarifExporter = &sarif.Options{File: options.SarifExport}
 		}
 	}
-	if reportingOptions != nil {
-		client, err := reporting.New(reportingOptions, options.ReportingDB)
-		if err != nil {
-			return nil, errors.Wrap(err, "could not create issue reporting client")
-		}
-		runner.issuesClient = client
-	}
-
-	// output coloring
-	useColor := !options.NoColor
-	runner.colorizer = aurora.NewAurora(useColor)
-	runner.severityColors = colorizer.New(runner.colorizer)
-
-	if options.TemplateList {
-		runner.listAvailableTemplates()
-		os.Exit(0)
-	}
-
-	if (len(options.Templates) == 0 || !options.NewTemplates || (options.Targets == "" && !options.Stdin && options.Target == "")) && options.UpdateTemplates {
-		os.Exit(0)
-	}
-	hm, err := hybrid.New(hybrid.DefaultDiskOptions)
-	if err != nil {
-		return nil, errors.Wrap(err, "could not create temporary input file")
-	}
-	runner.hostMap = hm
-
-	runner.inputCount = 0
-	dupeCount := 0
-
-	// Handle single target
-	if options.Target != "" {
-		runner.inputCount++
-		// nolint:errcheck // ignoring error
-		runner.hostMap.Set(options.Target, nil)
-	}
-
-	// Handle stdin
-	if options.Stdin {
-		scanner := bufio.NewScanner(os.Stdin)
-		for scanner.Scan() {
-			url := strings.TrimSpace(scanner.Text())
-			if url == "" {
-				continue
-			}
-			if _, ok := runner.hostMap.Get(url); ok {
-				dupeCount++
-				continue
-			}
-			runner.inputCount++
-			// nolint:errcheck // ignoring error
-			runner.hostMap.Set(url, nil)
-		}
-	}
-
-	// Handle taget file
-	if options.Targets != "" {
-		input, inputErr := os.Open(options.Targets)
-		if inputErr != nil {
-			return nil, errors.Wrap(inputErr, "could not open targets file")
-		}
-		scanner := bufio.NewScanner(input)
-		for scanner.Scan() {
-			url := strings.TrimSpace(scanner.Text())
-			if url == "" {
-				continue
-			}
-			if _, ok := runner.hostMap.Get(url); ok {
-				dupeCount++
-				continue
-			}
-			runner.inputCount++
-			// nolint:errcheck // ignoring error
-			runner.hostMap.Set(url, nil)
-		}
-		input.Close()
-	}
-
-	if dupeCount > 0 {
-		gologger.Info().Msgf("Supplied input was automatically deduplicated (%d removed).", dupeCount)
-	}
-
-	// Create the output file if asked
-	outputWriter, err := output.NewStandardWriter(!options.NoColor, options.NoMeta, options.JSON, options.Output, options.TraceLogFile)
-	if err != nil {
-		return nil, errors.Wrap(err, "could not create output file")
-	}
-	runner.output = outputWriter
-
-	if options.JSON && options.EnableProgressBar {
-		options.StatsJSON = true
-	}
-	if options.StatsJSON {
-		options.EnableProgressBar = true
-	}
-	// Creates the progress tracking object
-	var progressErr error
-	runner.progress, progressErr = progress.NewStatsTicker(options.StatsInterval, options.EnableProgressBar, options.StatsJSON, options.Metrics, options.MetricsPort)
-	if progressErr != nil {
-		return nil, progressErr
-	}
-
-	// create project file if requested or load existing one
-	if options.Project {
-		var projectFileErr error
-		runner.projectFile, projectFileErr = projectfile.New(&projectfile.Options{Path: options.ProjectPath, Cleanup: options.ProjectPath == ""})
-		if projectFileErr != nil {
-			return nil, projectFileErr
-		}
-	}
-
-	if !options.NoInteractsh {
-		interactshClient, err := interactsh.New(&interactsh.Options{
-			ServerURL:      options.InteractshURL,
-			CacheSize:      int64(options.InteractionsCacheSize),
-			Eviction:       time.Duration(options.InteractionsEviction) * time.Second,
-			ColldownPeriod: time.Duration(options.InteractionsColldownPeriod) * time.Second,
-			PollDuration:   time.Duration(options.InteractionsPollDuration) * time.Second,
-			Output:         runner.output,
-			IssuesClient:   runner.issuesClient,
-			Progress:       runner.progress,
-		})
-		if err != nil {
-			gologger.Error().Msgf("Could not create interactsh client: %s", err)
-		} else {
-			runner.interactsh = interactshClient
-		}
-	}
-
-	if options.RateLimit > 0 {
-		runner.ratelimiter = ratelimit.New(options.RateLimit)
-	} else {
-		runner.ratelimiter = ratelimit.NewUnlimited()
-	}
-	return runner, nil
+	return reportingOptions, nil
 }
 
 // Close releases all the resources and cleans up
@@ -273,17 +309,31 @@ func (r *Runner) RunEnumeration() error {
 	r.options.ExcludeTags = append(r.options.ExcludeTags, ignoreFile.Tags...)
 	r.options.ExcludedTemplates = append(r.options.ExcludedTemplates, ignoreFile.Files...)
 
-	executerOpts := protocols.ExecuterOptions{
-		Output:       r.output,
-		Options:      r.options,
-		Progress:     r.progress,
-		Catalog:      r.catalog,
-		IssuesClient: r.issuesClient,
-		RateLimiter:  r.ratelimiter,
-		Interactsh:   r.interactsh,
-		ProjectFile:  r.projectFile,
-		Browser:      r.browser,
+	var cache *hosterrorscache.Cache
+	if r.options.MaxHostError > 0 {
+		cache = hosterrorscache.New(r.options.MaxHostError, hosterrorscache.DefaultMaxHostsCount).SetVerbose(r.options.Verbose)
 	}
+	r.hostErrors = cache
+	executerOpts := protocols.ExecuterOptions{
+		Output:          r.output,
+		Options:         r.options,
+		Progress:        r.progress,
+		Catalog:         r.catalog,
+		IssuesClient:    r.issuesClient,
+		RateLimiter:     r.ratelimiter,
+		Interactsh:      r.interactsh,
+		ProjectFile:     r.projectFile,
+		Browser:         r.browser,
+		HostErrorsCache: cache,
+	}
+
+	workflowLoader, err := parsers.NewLoader(&executerOpts)
+	if err != nil {
+		return errors.Wrap(err, "Could not create loader.")
+	}
+
+	executerOpts.WorkflowLoader = workflowLoader
+
 	loaderConfig := loader.Config{
 		Templates:          r.options.Templates,
 		Workflows:          r.options.Workflows,
@@ -292,7 +342,7 @@ func (r *Runner) RunEnumeration() error {
 		ExcludeTags:        r.options.ExcludeTags,
 		IncludeTemplates:   r.options.IncludeTemplates,
 		Authors:            r.options.Author,
-		Severities:         r.options.Severity,
+		Severities:         r.options.Severities,
 		IncludeTags:        r.options.IncludeTags,
 		TemplatesDirectory: r.options.TemplatesDirectory,
 		Catalog:            r.catalog,
@@ -302,14 +352,23 @@ func (r *Runner) RunEnumeration() error {
 	if err != nil {
 		return errors.Wrap(err, "could not load templates from config")
 	}
+	store.Load()
+
 	if r.options.Validate {
-		if !store.ValidateTemplates(r.options.Templates, r.options.Workflows) {
-			return errors.New("an error occurred during templates validation")
+		if err := store.ValidateTemplates(r.options.Templates, r.options.Workflows); err != nil {
+			return err
 		}
-		gologger.Info().Msgf("All templates validated successfully\n")
+		if stats.GetValue(parsers.SyntaxErrorStats) == 0 && stats.GetValue(parsers.SyntaxWarningStats) == 0 {
+			gologger.Info().Msgf("All templates validated successfully\n")
+		} else {
+			return errors.New("encountered errors while performing template validation")
+		}
 		return nil // exit
 	}
-	store.Load()
+
+	// Display stats for any loaded templates syntax warnings or errors
+	stats.Display(parsers.SyntaxWarningStats)
+	stats.Display(parsers.SyntaxErrorStats)
 
 	builder := &strings.Builder{}
 	if r.templatesConfig != nil && r.templatesConfig.NucleiLatestVersion != "" {
@@ -329,7 +388,7 @@ func (r *Runner) RunEnumeration() error {
 
 	gologger.Info().Msgf("Using Nuclei Engine %s%s", config.Version, messageStr)
 
-	if r.templatesConfig != nil && r.templatesConfig.NucleiTemplatesLatestVersion != "" {
+	if r.templatesConfig != nil && r.templatesConfig.NucleiTemplatesLatestVersion != "" { // TODO extract duplicated logic
 		builder.WriteString(" (")
 
 		if r.templatesConfig.CurrentVersion == r.templatesConfig.NucleiTemplatesLatestVersion {
@@ -342,16 +401,18 @@ func (r *Runner) RunEnumeration() error {
 	messageStr = builder.String()
 	builder.Reset()
 
-	gologger.Info().Msgf("Using Nuclei Templates %s%s", r.templatesConfig.CurrentVersion, messageStr)
-
+	if r.templatesConfig != nil {
+		gologger.Info().Msgf("Using Nuclei Templates %s%s", r.templatesConfig.CurrentVersion, messageStr)
+	}
 	if r.interactsh != nil {
 		gologger.Info().Msgf("Using Interactsh Server %s", r.options.InteractshURL)
 	}
 	if len(store.Templates()) > 0 {
-		gologger.Info().Msgf("Templates loaded: %d (New: %d)", len(store.Templates()), r.countNewTemplates())
+		gologger.Info().Msgf("Templates added in last update: %d", r.countNewTemplates())
+		gologger.Info().Msgf("Templates loaded for scan: %d", len(store.Templates()))
 	}
 	if len(store.Workflows()) > 0 {
-		gologger.Info().Msgf("Workflows loaded: %d", len(store.Workflows()))
+		gologger.Info().Msgf("Workflows loaded for scan: %d", len(store.Workflows()))
 	}
 
 	// pre-parse all the templates, apply filters
@@ -360,7 +421,7 @@ func (r *Runner) RunEnumeration() error {
 	var unclusteredRequests int64
 	for _, template := range store.Templates() {
 		// workflows will dynamically adjust the totals while running, as
-		// it can't be know in advance which requests will be called
+		// it can't be known in advance which requests will be called
 		if len(template.Workflows) > 0 {
 			continue
 		}
@@ -385,15 +446,16 @@ func (r *Runner) RunEnumeration() error {
 	for _, cluster := range clusters {
 		if len(cluster) > 1 && !r.options.OfflineHTTP {
 			executerOpts := protocols.ExecuterOptions{
-				Output:       r.output,
-				Options:      r.options,
-				Progress:     r.progress,
-				Catalog:      r.catalog,
-				RateLimiter:  r.ratelimiter,
-				IssuesClient: r.issuesClient,
-				Browser:      r.browser,
-				ProjectFile:  r.projectFile,
-				Interactsh:   r.interactsh,
+				Output:          r.output,
+				Options:         r.options,
+				Progress:        r.progress,
+				Catalog:         r.catalog,
+				RateLimiter:     r.ratelimiter,
+				IssuesClient:    r.issuesClient,
+				Browser:         r.browser,
+				ProjectFile:     r.projectFile,
+				Interactsh:      r.interactsh,
+				HostErrorsCache: cache,
 			}
 			clusterID := fmt.Sprintf("cluster-%s", xid.New().String())
 
@@ -427,6 +489,11 @@ func (r *Runner) RunEnumeration() error {
 	if templateCount == 0 {
 		return errors.New("no templates were found")
 	}
+
+	/*
+		TODO does it make sense to run the logic below if there are no targets specified?
+		Can we safely assume the user is just experimenting with the template/workflow filters before running them?
+	*/
 
 	results := &atomic.Bool{}
 	wgtemplates := sizedwaitgroup.New(r.options.TemplateThreads)
@@ -470,7 +537,10 @@ func (r *Runner) RunEnumeration() error {
 
 // readNewTemplatesFile reads newly added templates from directory if it exists
 func (r *Runner) readNewTemplatesFile() ([]string, error) {
-	additionsFile := path.Join(r.templatesConfig.TemplatesDirectory, ".new-additions")
+	if r.templatesConfig == nil {
+		return nil, nil
+	}
+	additionsFile := filepath.Join(r.templatesConfig.TemplatesDirectory, ".new-additions")
 	file, err := os.Open(additionsFile)
 	if err != nil {
 		return nil, err
@@ -491,7 +561,10 @@ func (r *Runner) readNewTemplatesFile() ([]string, error) {
 
 // readNewTemplatesFile reads newly added templates from directory if it exists
 func (r *Runner) countNewTemplates() int {
-	additionsFile := path.Join(r.templatesConfig.TemplatesDirectory, ".new-additions")
+	if r.templatesConfig == nil {
+		return 0
+	}
+	additionsFile := filepath.Join(r.templatesConfig.TemplatesDirectory, ".new-additions")
 	file, err := os.Open(additionsFile)
 	if err != nil {
 		return 0

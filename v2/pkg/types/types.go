@@ -1,6 +1,9 @@
 package types
 
-import "github.com/projectdiscovery/goflags"
+import (
+	"github.com/projectdiscovery/goflags"
+	"github.com/projectdiscovery/nuclei/v2/pkg/model/types/severity"
+)
 
 // Options contains the configuration options for nuclei scanner.
 type Options struct {
@@ -18,8 +21,10 @@ type Options struct {
 	ExcludedTemplates goflags.StringSlice
 	// CustomHeaders is the list of custom global headers to send with each request.
 	CustomHeaders goflags.StringSlice
-	// Severity filters templates based on their severity and only run the matching ones.
-	Severity goflags.NormalizedStringSlice
+	// Vars is the list of custom global vars
+	Vars goflags.RuntimeMap
+	// Severities filters templates based on their severity and only run the matching ones.
+	Severities severity.Severities
 	// Author filters templates based on their author and only run the matching ones.
 	Author goflags.NormalizedStringSlice
 	// IncludeTags includes specified tags to be run even while being in denylist
@@ -32,10 +37,10 @@ type Options struct {
 	ProjectPath string
 	// InteractshURL is the URL for the interactsh server.
 	InteractshURL string
-	// Target is a single URL/Domain to scan using a template
-	Target string
-	// Targets specifies the targets to scan using templates.
-	Targets string
+	// Target URLs/Domains to scan using a template
+	Targets goflags.StringSlice
+	// TargetsFilePath specifies the targets from a file to scan using templates.
+	TargetsFilePath string
 	// Output is the file to write found results to.
 	Output string
 	// ProxyURL is the URL for the proxy server
@@ -60,6 +65,8 @@ type Options struct {
 	StatsInterval int
 	// MetricsPort is the port to show metrics on
 	MetricsPort int
+	// MaxHostError is the maximum number of errors allowed for a host
+	MaxHostError int
 	// BulkSize is the of targets analyzed in parallel for each template
 	BulkSize int
 	// TemplateThreads is the number of templates executed in parallel
@@ -70,6 +77,8 @@ type Options struct {
 	Retries int
 	// Rate-Limit is the maximum number of requests per specified target
 	RateLimit int
+	// Rate-Limit is the maximum number of requests per minute for specified target
+	RateLimitMinute int
 	// PageTimeout is the maximum time to wait for a page in seconds
 	PageTimeout int
 	// InteractionsCacheSize is the number of interaction-url->req to keep in cache at a time.
@@ -131,6 +140,8 @@ type Options struct {
 	StopAtFirstMatch bool
 	// NoMeta disables display of metadata for the matches
 	NoMeta bool
+	// NoTimestamp disables display of timestamp for the matcher
+	NoTimestamp bool
 	// Project is used to avoid sending same HTTP request multiple times
 	Project bool
 	// NewTemplates only runs newly added templates from the repository
@@ -141,4 +152,6 @@ type Options struct {
 	UpdateNuclei bool
 	// NoUpdateTemplates disables checking for nuclei templates updates
 	NoUpdateTemplates bool
+	// EnvironmentVariables enables support for environment variables
+	EnvironmentVariables bool
 }

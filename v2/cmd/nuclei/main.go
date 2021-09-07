@@ -1,12 +1,14 @@
 package main
 
 import (
+	"fmt"
 	"os"
-	"path"
+	"path/filepath"
 
 	"github.com/projectdiscovery/goflags"
 	"github.com/projectdiscovery/gologger"
 	"github.com/projectdiscovery/nuclei/v2/internal/runner"
+	"github.com/projectdiscovery/nuclei/v2/pkg/model/types/severity"
 	"github.com/projectdiscovery/nuclei/v2/pkg/types"
 )
 
@@ -35,15 +37,19 @@ func main() {
 
 func readConfig() {
 	home, _ := os.UserHomeDir()
-	templatesDirectory := path.Join(home, "nuclei-templates")
+	templatesDirectory := filepath.Join(home, "nuclei-templates")
 
 	flagSet := goflags.NewFlagSet()
 	flagSet.SetDescription(`Nuclei is a fast, template based vulnerability scanner focusing
 on extensive configurability, massive extensibility and ease of use.`)
 
+	/* TODO Important: The defined default values, especially for slice/array types are NOT DEFAULT VALUES, but rather implicit values to which the user input is appended.
+	This can be very confusing and should be addressed
+	*/
+
 	createGroup(flagSet, "input", "Target",
-		flagSet.StringVarP(&options.Target, "target", "u", "", "target URL/host to scan"),
-		flagSet.StringVarP(&options.Targets, "list", "l", "", "path to file containing a list of target URLs/hosts to scan (one per line)"),
+		flagSet.StringSliceVarP(&options.Targets, "target", "u", []string{}, "target URLs/hosts to scan"),
+		flagSet.StringVarP(&options.TargetsFilePath, "list", "l", "", "path to file containing a list of target URLs/hosts to scan (one per line)"),
 	)
 
 	createGroup(flagSet, "templates", "Templates",
@@ -64,7 +70,7 @@ on extensive configurability, massive extensibility and ease of use.`)
 		flagSet.StringSliceVar(&options.IncludeTemplates, "include-templates", []string{}, "templates to be executed even if they are excluded either by default or configuration"),
 		flagSet.StringSliceVarP(&options.ExcludedTemplates, "exclude", "exclude-templates", []string{}, "template or template directory paths to exclude"),
 
-		flagSet.NormalizedStringSliceVarP(&options.Severity, "impact", "severity", []string{}, "execute templates that match the provided severities only"),
+		flagSet.VarP(&options.Severities, "impact", "severity", fmt.Sprintf("Templates to run based on severity. Possible values: %s", severity.GetSupportedSeverities().String())),
 		flagSet.NormalizedStringSliceVar(&options.Author, "author", []string{}, "execute templates that are (co-)created by the specified authors"),
 	)
 
@@ -80,6 +86,7 @@ on extensive configurability, massive extensibility and ease of use.`)
 		flagSet.BoolVarP(&options.JSONRequests, "include-rr", "irr", false, "include request/response pairs in the JSONL output (for findings only)"),
 
 		flagSet.BoolVarP(&options.NoMeta, "no-meta", "nm", false, "don't display match metadata"),
+		flagSet.BoolVarP(&options.NoTimestamp, "no-timestamp", "nts", false, "don't display timestamp metadata in CLI output"),
 		flagSet.StringVarP(&options.ReportingDB, "report-db", "rdb", "", "local nuclei reporting database (always use this to persist report data)"),
 
 		flagSet.StringVarP(&options.DiskExportDirectory, "markdown-export", "me", "", "directory to export results in markdown format"),
@@ -92,9 +99,12 @@ on extensive configurability, massive extensibility and ease of use.`)
 
 		flagSet.StringSliceVarP(&options.CustomHeaders, "header", "H", []string{}, "custom headers in header:value format"),
 
+		flagSet.RuntimeMapVarP(&options.Vars, "var", "V", []string{}, "custom vars in var=value format"),
+
 		flagSet.StringVarP(&options.ResolversFile, "resolvers", "r", "", "file containing resolver list for nuclei"),
 		flagSet.BoolVar(&options.SystemResolvers, "system-resolvers", false, "use system DNS resolving as error fallback"),
 		flagSet.BoolVar(&options.OfflineHTTP, "passive", false, "enable passive HTTP response processing mode"),
+		flagSet.BoolVar(&options.EnvironmentVariables, "env-vars", false, "enable environment variables support"),
 	)
 
 	createGroup(flagSet, "interactsh", "interactsh",
@@ -109,6 +119,7 @@ on extensive configurability, massive extensibility and ease of use.`)
 
 	createGroup(flagSet, "rate-limit", "Rate-Limit",
 		flagSet.IntVarP(&options.RateLimit, "rate-limit", "rl", 150, "maximum number of requests to send per second"),
+		flagSet.IntVarP(&options.RateLimitMinute, "rate-limit-minute", "rlm", 0, "maximum number of requests to send per minute"),
 		flagSet.IntVarP(&options.BulkSize, "bulk-size", "bs", 25, "maximum number of hosts to be analyzed in parallel per template"),
 		flagSet.IntVarP(&options.TemplateThreads, "concurrency", "c", 10, "maximum number of templates to be executed in parallel"),
 	)
@@ -116,6 +127,7 @@ on extensive configurability, massive extensibility and ease of use.`)
 	createGroup(flagSet, "optimization", "Optimizations",
 		flagSet.IntVar(&options.Timeout, "timeout", 5, "time to wait in seconds before timeout"),
 		flagSet.IntVar(&options.Retries, "retries", 1, "number of times to retry a failed request"),
+		flagSet.IntVar(&options.MaxHostError, "max-host-error", 30, "max errors for a host before skipping from scan"),
 
 		flagSet.BoolVar(&options.Project, "project", false, "use a project folder to avoid sending same request multiple times"),
 		flagSet.StringVar(&options.ProjectPath, "project-path", os.TempDir(), "set a specific project path"),
@@ -148,7 +160,7 @@ on extensive configurability, massive extensibility and ease of use.`)
 	createGroup(flagSet, "update", "Update",
 		flagSet.BoolVar(&options.UpdateNuclei, "update", false, "update nuclei to the latest released version"),
 		flagSet.BoolVarP(&options.UpdateTemplates, "update-templates", "ut", false, "update the community templates to latest released version"),
-		flagSet.BoolVarP(&options.NoUpdateTemplates, "no-update-templates", "nut", false, "Do not check for nuclei-templates updates"),
+		flagSet.BoolVarP(&options.NoUpdateTemplates, "no-update-templates", "nut", false, "do not check for nuclei-templates updates"),
 		flagSet.StringVarP(&options.TemplatesDirectory, "update-directory", "ud", templatesDirectory, "overwrite the default nuclei-templates directory"),
 	)
 
