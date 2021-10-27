@@ -1,6 +1,7 @@
 package http
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -15,10 +16,12 @@ import (
 
 	"github.com/corpix/uarand"
 	"github.com/pkg/errors"
+
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/common/expressions"
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/common/generators"
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/http/race"
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/http/raw"
+	"github.com/projectdiscovery/nuclei/v2/pkg/types"
 	"github.com/projectdiscovery/rawhttp"
 	"github.com/projectdiscovery/retryablehttp-go"
 )
@@ -27,24 +30,46 @@ var (
 	urlWithPortRegex = regexp.MustCompile(`{{BaseURL}}:(\d+)`)
 )
 
-// generatedRequest is a single wrapped generated request for a template request
+// generatedRequest is a single generated request wrapped for a template request
 type generatedRequest struct {
 	original        *Request
 	rawRequest      *raw.Request
 	meta            map[string]interface{}
 	pipelinedClient *rawhttp.PipelineClient
 	request         *retryablehttp.Request
+	dynamicValues   map[string]interface{}
+}
+
+func (g *generatedRequest) URL() string {
+	if g.request != nil {
+		return g.request.URL.String()
+	}
+	if g.rawRequest != nil {
+		return g.rawRequest.FullURL
+	}
+	return ""
 }
 
 // Make creates a http request for the provided input.
 // It returns io.EOF as error when all the requests have been exhausted.
 func (r *requestGenerator) Make(baseURL string, dynamicValues map[string]interface{}, interactURL string) (*generatedRequest, error) {
+	if r.request.SelfContained {
+		return r.makeSelfContainedRequest(dynamicValues, interactURL)
+	}
 	// We get the next payload for the request.
 	data, payloads, ok := r.nextValue()
 	if !ok {
 		return nil, io.EOF
 	}
 	ctx := context.Background()
+
+	if interactURL != "" {
+		data = r.options.Interactsh.ReplaceMarkers(data, interactURL)
+
+		for payloadName, payloadValue := range payloads {
+			payloads[payloadName] = r.options.Interactsh.ReplaceMarkers(types.ToString(payloadValue), interactURL)
+		}
+	}
 
 	parsed, err := url.Parse(baseURL)
 	if err != nil {
@@ -53,28 +78,70 @@ func (r *requestGenerator) Make(baseURL string, dynamicValues map[string]interfa
 
 	data, parsed = baseURLWithTemplatePrefs(data, parsed)
 
-	trailingSlash := false
 	isRawRequest := len(r.request.Raw) > 0
+
+	// If the request is not a raw request, and the URL input path is suffixed with
+	// a trailing slash, and our Input URL is also suffixed with a trailing slash,
+	// mark trailingSlash bool as true which will be later used during variable generation
+	// to generate correct path removed slash which would otherwise generate // invalid sequence.
+	// TODO: Figure out a cleaner way to do this sanitization.
+	trailingSlash := false
 	if !isRawRequest && strings.HasSuffix(parsed.Path, "/") && strings.Contains(data, "{{BaseURL}}/") {
 		trailingSlash = true
 	}
-	values := generators.MergeMaps(dynamicValues, generateVariables(parsed, trailingSlash))
 
-	// merge with vars
-	if !r.options.Options.Vars.IsEmpty() {
-		values = generators.MergeMaps(values, r.options.Options.Vars.AsMap())
-	}
-
-	// merge with env vars
-	if r.options.Options.EnvironmentVariables {
-		values = generators.MergeMaps(generators.EnvVars(), values)
-	}
+	values := generators.MergeMaps(
+		generators.MergeMaps(dynamicValues, generateVariables(parsed, trailingSlash)),
+		generators.BuildPayloadFromOptions(r.request.options.Options),
+	)
 
 	// If data contains \n it's a raw request, process it like raw. Else
 	// continue with the template based request flow.
 	if isRawRequest {
 		return r.makeHTTPRequestFromRaw(ctx, parsed.String(), data, values, payloads, interactURL)
 	}
+	return r.makeHTTPRequestFromModel(ctx, data, values, payloads, interactURL)
+}
+
+func (r *requestGenerator) makeSelfContainedRequest(dynamicValues map[string]interface{}, interactURL string) (*generatedRequest, error) {
+	// We get the next payload for the request.
+	data, payloads, ok := r.nextValue()
+	if !ok {
+		return nil, io.EOF
+	}
+	ctx := context.Background()
+
+	isRawRequest := r.request.isRaw()
+
+	// If the request is a raw request, get the URL from the request
+	// header and use it to make the request.
+	if isRawRequest {
+		// Get the hostname from the URL section to build the request.
+		reader := bufio.NewReader(strings.NewReader(data))
+		s, err := reader.ReadString('\n')
+		if err != nil {
+			return nil, fmt.Errorf("could not read request: %s", err)
+		}
+
+		parts := strings.Split(s, " ")
+		if len(parts) < 3 {
+			return nil, fmt.Errorf("malformed request supplied")
+		}
+		parsed, err := url.Parse(parts[1])
+		if err != nil {
+			return nil, fmt.Errorf("could not parse request URL: %s", err)
+		}
+		values := generators.MergeMaps(
+			generators.MergeMaps(dynamicValues, generateVariables(parsed, false)),
+			generators.BuildPayloadFromOptions(r.request.options.Options),
+		)
+
+		return r.makeHTTPRequestFromRaw(ctx, parsed.String(), data, values, payloads, interactURL)
+	}
+	values := generators.MergeMaps(
+		dynamicValues,
+		generators.BuildPayloadFromOptions(r.request.options.Options),
+	)
 	return r.makeHTTPRequestFromModel(ctx, data, values, payloads, interactURL)
 }
 
@@ -113,7 +180,7 @@ func (r *requestGenerator) makeHTTPRequestFromModel(ctx context.Context, data st
 	// request values.
 	finalValues := generators.MergeMaps(generatorValues, values)
 
-	// Evaulate the expressions for the request if any.
+	// Evaluate the expressions for the request if any.
 	var err error
 	data, err = expressions.Evaluate(data, finalValues)
 	if err != nil {
@@ -135,7 +202,7 @@ func (r *requestGenerator) makeHTTPRequestFromModel(ctx context.Context, data st
 	if err != nil {
 		return nil, err
 	}
-	return &generatedRequest{request: request, meta: generatorValues, original: r.request}, nil
+	return &generatedRequest{request: request, meta: generatorValues, original: r.request, dynamicValues: finalValues}, nil
 }
 
 // makeHTTPRequestFromRaw creates a *http.Request from a raw request
@@ -152,7 +219,7 @@ func (r *requestGenerator) handleRawWithPayloads(ctx context.Context, rawRequest
 	// request values.
 	finalValues := generators.MergeMaps(generatorValues, values)
 
-	// Evaulate the expressions for raw request if any.
+	// Evaluate the expressions for raw request if any.
 	var err error
 	rawRequest, err = expressions.Evaluate(rawRequest, finalValues)
 	if err != nil {
@@ -196,7 +263,7 @@ func (r *requestGenerator) handleRawWithPayloads(ctx context.Context, rawRequest
 		return nil, err
 	}
 
-	return &generatedRequest{request: request, meta: generatorValues, original: r.request}, nil
+	return &generatedRequest{request: request, meta: generatorValues, original: r.request, dynamicValues: finalValues}, nil
 }
 
 // fillRequest fills various headers in the request with values
@@ -235,7 +302,7 @@ func (r *requestGenerator) fillRequest(req *http.Request, values map[string]inte
 	}
 	setHeader(req, "User-Agent", uarand.GetRandom())
 
-	// Only set these headers on non raw requests
+	// Only set these headers on non-raw requests
 	if len(r.request.Raw) == 0 {
 		setHeader(req, "Accept", "*/*")
 		setHeader(req, "Accept-Language", "en")

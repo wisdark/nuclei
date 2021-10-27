@@ -114,18 +114,14 @@ var functions = map[string]govaluate.ExpressionFunction{
 	},
 	"sha256": func(args ...interface{}) (interface{}, error) {
 		h := sha256.New()
-		_, err := h.Write([]byte(types.ToString(args[0])))
-
-		if err != nil {
+		if _, err := h.Write([]byte(types.ToString(args[0]))); err != nil {
 			return nil, err
 		}
 		return hex.EncodeToString(h.Sum(nil)), nil
 	},
 	"sha1": func(args ...interface{}) (interface{}, error) {
 		h := sha1.New()
-		_, err := h.Write([]byte(types.ToString(args[0])))
-
-		if err != nil {
+		if _, err := h.Write([]byte(types.ToString(args[0]))); err != nil {
 			return nil, err
 		}
 		return hex.EncodeToString(h.Sum(nil)), nil
@@ -228,6 +224,15 @@ var functions = map[string]govaluate.ExpressionFunction{
 		}
 		return rand.Intn(max-min) + min, nil
 	},
+	"unixtime": func(args ...interface{}) (interface{}, error) {
+		seconds := 0
+		if len(args) >= 1 {
+			seconds = int(args[0].(float64))
+		}
+		now := time.Now()
+		offset := now.Add(time.Duration(seconds) * time.Second)
+		return offset.Unix(), nil
+	},
 	// Time Functions
 	"waitfor": func(args ...interface{}) (interface{}, error) {
 		seconds := args[0].(float64)
@@ -258,7 +263,7 @@ func HelperFunctions() map[string]govaluate.ExpressionFunction {
 	return functions
 }
 
-// AddHelperFunction allows creation of additiona helper functions to be supported with templates
+// AddHelperFunction allows creation of additional helper functions to be supported with templates
 func AddHelperFunction(key string, value func(args ...interface{}) (interface{}, error)) error {
 	if _, ok := functions[key]; !ok {
 		functions[key] = value

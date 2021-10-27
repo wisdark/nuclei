@@ -2,6 +2,35 @@
   "$schema": "http://json-schema.org/draft-04/schema#",
   "$ref": "#/definitions/templates.Template",
   "definitions": {
+    "model.Classification": {
+      "properties": {
+        "cve-id": {
+          "$ref": "#/definitions/stringslice.StringSlice",
+          "title": "cve ids for the template",
+          "description": "CVE IDs for the template"
+        },
+        "cwe-id": {
+          "$ref": "#/definitions/stringslice.StringSlice",
+          "title": "cwe ids for the template",
+          "description": "CWE IDs for the template"
+        },
+        "cvss-metrics": {
+          "type": "string",
+          "title": "cvss metrics for the template",
+          "description": "CVSS Metrics for the template",
+          "examples": [
+            "3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+          ]
+        },
+        "cvss-score": {
+          "type": "number",
+          "title": "cvss score for the template",
+          "description": "CVSS Score for the template"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "model.Info": {
       "properties": {
         "name": {
@@ -28,7 +57,7 @@
           "title": "description of the template",
           "description": "In-depth explanation on what the template does",
           "examples": [
-            "Bower is a package manager which stores packages informations in bower.json file"
+            "Bower is a package manager which stores package information in the bower.json file"
           ]
         },
         "reference": {
@@ -40,7 +69,7 @@
           "$schema": "http://json-schema.org/draft-04/schema#",
           "$ref": "#/definitions/severity.Holder"
         },
-        "additional-fields": {
+        "metadata": {
           "patternProperties": {
             ".*": {
               "type": "string"
@@ -49,6 +78,20 @@
           "type": "object",
           "title": "additional metadata for the template",
           "description": "Additional metadata fields for the template"
+        },
+        "classification": {
+          "$schema": "http://json-schema.org/draft-04/schema#",
+          "$ref": "#/definitions/model.Classification",
+          "title": "classification info for the template",
+          "description": "Classification information for the template"
+        },
+        "remediation": {
+          "type": "string",
+          "title": "remediation steps for the template",
+          "description": "In-depth explanation on how to fix the issues found by the template",
+          "examples": [
+            "Change the default administrative username and password of Apache ActiveMQ by editing the file jetty-realm.properties"
+          ]
         }
       },
       "additionalProperties": false,
@@ -164,6 +207,7 @@
             "size",
             "word",
             "regex",
+            "binary",
             "dsl"
           ],
           "type": "string",
@@ -329,6 +373,14 @@
           "type": "boolean",
           "title": "recurse all servers",
           "description": "Recursion determines if resolver should recurse all records to get fresh results"
+        },
+        "resolvers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "Resolvers",
+          "description": "Define resolvers to use within the template"
         }
       },
       "additionalProperties": false,
@@ -554,7 +606,7 @@
         },
         "attack": {
           "enum": [
-            "sniper",
+            "batteringram",
             "pitchfork",
             "clusterbomb"
           ],
@@ -572,7 +624,8 @@
             "CONNECT",
             "OPTIONS",
             "TRACE",
-            "PATCH"
+            "PATCH",
+            "PURGE"
           ],
           "type": "string",
           "title": "method is the http request method",
@@ -667,6 +720,11 @@
           "type": "boolean",
           "title": "stop at first match",
           "description": "Stop the execution after a match is found"
+        },
+        "skip-variables-check": {
+          "type": "boolean",
+          "title": "skip variable checks",
+          "description": "Skips the check for unresolved variables in request"
         }
       },
       "additionalProperties": false,
@@ -719,7 +777,7 @@
         },
         "attack": {
           "enum": [
-            "sniper",
+            "batteringram",
             "pitchfork",
             "clusterbomb"
           ],
@@ -853,6 +911,11 @@
           "type": "array",
           "title": "list of workflows to execute",
           "description": "List of workflows to execute for template"
+        },
+        "self-contained": {
+          "type": "boolean",
+          "title": "mark requests as self-contained",
+          "description": "Mark Requests for the template as self-contained"
         }
       },
       "additionalProperties": false,

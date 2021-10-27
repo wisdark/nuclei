@@ -13,6 +13,9 @@ import (
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/common/generators"
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/common/tostring"
 	"github.com/projectdiscovery/rawhttp"
+	"github.com/projectdiscovery/stringsutil"
+	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/transform"
 )
 
 // dumpResponseWithRedirectChain dumps a http response with the
@@ -121,4 +124,21 @@ func handleDecompression(resp *http.Response, bodyOrig []byte) (bodyDec []byte, 
 		return bodyOrig, err
 	}
 	return bodyDec, nil
+}
+
+// decodegbk converts GBK to UTF-8
+func decodegbk(s []byte) ([]byte, error) {
+	I := bytes.NewReader(s)
+	O := transform.NewReader(I, simplifiedchinese.GBK.NewDecoder())
+	d, e := ioutil.ReadAll(O)
+	if e != nil {
+		return nil, e
+	}
+	return d, nil
+}
+
+// isContentTypeGbk checks if the content-type header is gbk
+func isContentTypeGbk(contentType string) bool {
+	contentType = strings.ToLower(contentType)
+	return stringsutil.ContainsAny(contentType, "gbk", "gb2312", "gb18030")
 }

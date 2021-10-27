@@ -6,11 +6,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSniperGenerator(t *testing.T) {
+func TestBatteringRamGenerator(t *testing.T) {
 	usernames := []string{"admin", "password"}
-	moreUsernames := []string{"login", "test"}
 
-	generator, err := New(map[string]interface{}{"username": usernames, "aliases": moreUsernames}, Sniper, "")
+	generator, err := New(map[string]interface{}{"username": usernames}, BatteringRam, "")
 	require.Nil(t, err, "could not create generator")
 
 	iterator := generator.NewIterator()
@@ -22,12 +21,12 @@ func TestSniperGenerator(t *testing.T) {
 		}
 		count++
 	}
-	require.Equal(t, len(usernames)+len(moreUsernames), count, "could not get correct sniper counts")
+	require.Equal(t, len(usernames), count, "could not get correct batteringram counts")
 }
 
 func TestPitchforkGenerator(t *testing.T) {
 	usernames := []string{"admin", "token"}
-	passwords := []string{"admin", "password"}
+	passwords := []string{"password1", "password2", "password3"}
 
 	generator, err := New(map[string]interface{}{"username": usernames, "password": passwords}, PitchFork, "")
 	require.Nil(t, err, "could not create generator")
@@ -43,7 +42,7 @@ func TestPitchforkGenerator(t *testing.T) {
 		require.Contains(t, usernames, value["username"], "Could not get correct pitchfork username")
 		require.Contains(t, passwords, value["password"], "Could not get correct pitchfork password")
 	}
-	require.Equal(t, len(passwords), count, "could not get correct pitchfork counts")
+	require.Equal(t, len(usernames), count, "could not get correct pitchfork counts")
 }
 
 func TestClusterbombGenerator(t *testing.T) {

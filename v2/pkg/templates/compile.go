@@ -53,8 +53,7 @@ func Parse(filePath string, preprocessor Preprocessor, options protocols.Execute
 		data = preprocessor.Process(data)
 	}
 
-	err = yaml.Unmarshal(data, template)
-	if err != nil {
+	if err := yaml.Unmarshal(data, template); err != nil {
 		return nil, err
 	}
 
@@ -135,8 +134,7 @@ func Parse(filePath string, preprocessor Preprocessor, options protocols.Execute
 		template.Executer = executer.NewExecuter(requests, &options)
 	}
 	if template.Executer != nil {
-		err := template.Executer.Compile()
-		if err != nil {
+		if err := template.Executer.Compile(); err != nil {
 			return nil, errors.Wrap(err, "could not compile request")
 		}
 		template.TotalRequests += template.Executer.Requests()
@@ -146,6 +144,21 @@ func Parse(filePath string, preprocessor Preprocessor, options protocols.Execute
 	}
 	template.Path = filePath
 
+	template.parseSelfContainedRequests()
+
 	parsedTemplatesCache.Store(filePath, template, err)
 	return template, nil
+}
+
+// parseSelfContainedRequests parses the self contained template requests.
+func (t *Template) parseSelfContainedRequests() {
+	if !t.SelfContained {
+		return
+	}
+	for _, request := range t.RequestsHTTP {
+		request.SelfContained = true
+	}
+	for _, request := range t.RequestsNetwork {
+		request.SelfContained = true
+	}
 }
