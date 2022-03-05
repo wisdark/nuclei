@@ -8,13 +8,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/projectdiscovery/nuclei/v2/internal/testutils"
 	"github.com/projectdiscovery/nuclei/v2/pkg/model"
 	"github.com/projectdiscovery/nuclei/v2/pkg/model/types/severity"
 	"github.com/projectdiscovery/nuclei/v2/pkg/operators"
 	"github.com/projectdiscovery/nuclei/v2/pkg/operators/extractors"
 	"github.com/projectdiscovery/nuclei/v2/pkg/operators/matchers"
 	"github.com/projectdiscovery/nuclei/v2/pkg/output"
+	"github.com/projectdiscovery/nuclei/v2/pkg/testutils"
 )
 
 func TestFileExecuteWithResults(t *testing.T) {
@@ -23,21 +23,21 @@ func TestFileExecuteWithResults(t *testing.T) {
 	testutils.Init(options)
 	templateID := "testing-file"
 	request := &Request{
-		ID:                templateID,
-		MaxSize:           1024,
-		NoRecursive:       false,
-		Extensions:        []string{"all"},
-		ExtensionDenylist: []string{".go"},
+		ID:          templateID,
+		MaxSize:     1024,
+		NoRecursive: false,
+		Extensions:  []string{"all"},
+		DenyList:    []string{".go"},
 		Operators: operators.Operators{
 			Matchers: []*matchers.Matcher{{
 				Name:  "test",
 				Part:  "raw",
-				Type:  "word",
+				Type:  matchers.MatcherTypeHolder{MatcherType: matchers.WordsMatcher},
 				Words: []string{"1.1.1.1"},
 			}},
 			Extractors: []*extractors.Extractor{{
 				Part:  "raw",
-				Type:  "regex",
+				Type:  extractors.ExtractorTypeHolder{ExtractorType: extractors.RegexExtractor},
 				Regex: []string{"[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+"},
 			}},
 		},
@@ -57,7 +57,7 @@ func TestFileExecuteWithResults(t *testing.T) {
 		"config.yaml": "TEST\r\n1.1.1.1\r\n",
 	}
 	for k, v := range files {
-		err = ioutil.WriteFile(filepath.Join(tempDir, k), []byte(v), 0777)
+		err = ioutil.WriteFile(filepath.Join(tempDir, k), []byte(v), os.ModePerm)
 		require.Nil(t, err, "could not write temporary file")
 	}
 
@@ -76,4 +76,18 @@ func TestFileExecuteWithResults(t *testing.T) {
 	require.Equal(t, 1, len(finalEvent.Results[0].ExtractedResults), "could not get correct number of extracted results")
 	require.Equal(t, "1.1.1.1", finalEvent.Results[0].ExtractedResults[0], "could not get correct extracted results")
 	finalEvent = nil
+}
+
+func TestGenerateNewLineIndexes(t *testing.T) {
+	lines := calculateLineFunc(`aaa
+bbb
+ccc
+RequestDataTooBig
+dddd
+eeee
+RequestDataTooBig
+dd
+RequestDataTooBig3
+SuspiciousOperation`, map[string]struct{}{"SuspiciousOperation": {}, "RequestDataTooBig": {}})
+	require.ElementsMatch(t, []int{4, 7, 9, 10}, lines, "could not calculate correct lines")
 }

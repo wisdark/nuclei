@@ -50,13 +50,6 @@ type Info struct {
 	Reference stringslice.StringSlice `json:"reference,omitempty" yaml:"reference,omitempty" jsonschema:"title=references for the template,description=Links relevant to the template"`
 	// description: |
 	//   Severity of the template.
-	//
-	// values:
-	//   - info
-	//   - low
-	//   - medium
-	//   - high
-	//   - critical
 	SeverityHolder severity.Holder `json:"severity,omitempty" yaml:"severity,omitempty"`
 	// description: |
 	//   Metadata of the template.
@@ -64,7 +57,7 @@ type Info struct {
 	// examples:
 	//   - value: >
 	//       map[string]string{"customField1":"customValue1"}
-	Metadata map[string]string `json:"metadata,omitempty" yaml:"metadata,omitempty" jsonschema:"title=additional metadata for the template,description=Additional metadata fields for the template"`
+	Metadata map[string]interface{} `json:"metadata,omitempty" yaml:"metadata,omitempty" jsonschema:"title=additional metadata for the template,description=Additional metadata fields for the template"`
 
 	// description: |
 	//   Classification contains classification information about the template.

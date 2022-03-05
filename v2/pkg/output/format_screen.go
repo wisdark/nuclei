@@ -2,6 +2,7 @@ package output
 
 import (
 	"bytes"
+	"strconv"
 
 	"github.com/projectdiscovery/nuclei/v2/pkg/types"
 )
@@ -27,6 +28,15 @@ func (w *StandardWriter) formatScreen(output *ResultEvent) []byte {
 			builder.WriteString(w.aurora.BrightGreen(output.ExtractorName).Bold().String())
 		}
 
+		if w.matcherStatus {
+			builder.WriteString("] [")
+			if !output.MatcherStatus {
+				builder.WriteString(w.aurora.Red("failed").String())
+			} else {
+				builder.WriteString(w.aurora.Green("matched").String())
+			}
+		}
+
 		builder.WriteString("] [")
 		builder.WriteString(w.aurora.BrightBlue(output.Type).String())
 		builder.WriteString("] ")
@@ -35,7 +45,11 @@ func (w *StandardWriter) formatScreen(output *ResultEvent) []byte {
 		builder.WriteString(w.severityColors(output.Info.SeverityHolder.Severity))
 		builder.WriteString("] ")
 	}
-	builder.WriteString(output.Matched)
+	if output.Matched != "" {
+		builder.WriteString(output.Matched)
+	} else {
+		builder.WriteString(output.Host)
+	}
 
 	// If any extractors, write the results
 	if len(output.ExtractedResults) > 0 {
@@ -46,6 +60,19 @@ func (w *StandardWriter) formatScreen(output *ResultEvent) []byte {
 
 			if i != len(output.ExtractedResults)-1 {
 				builder.WriteRune(',')
+			}
+		}
+		builder.WriteString("]")
+	}
+
+	if len(output.LineCount) > 0 {
+		builder.WriteString(" [LN: ")
+
+		for i, line := range output.LineCount {
+			builder.WriteString(strconv.Itoa(line))
+
+			if i != len(output.LineCount)-1 {
+				builder.WriteString(",")
 			}
 		}
 		builder.WriteString("]")

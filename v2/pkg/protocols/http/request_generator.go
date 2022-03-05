@@ -16,7 +16,11 @@ type requestGenerator struct {
 	request         *Request
 	options         *protocols.ExecuterOptions
 	payloadIterator *generators.Iterator
+	interactshURLs  []string
 }
+
+// LeaveDefaultPorts skips normalization of default standard ports
+var LeaveDefaultPorts = false
 
 // newGenerator creates a new request generator instance
 func (request *Request) newGenerator() *requestGenerator {

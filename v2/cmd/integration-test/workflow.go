@@ -7,7 +7,7 @@ import (
 
 	"github.com/julienschmidt/httprouter"
 
-	"github.com/projectdiscovery/nuclei/v2/internal/testutils"
+	"github.com/projectdiscovery/nuclei/v2/pkg/testutils"
 )
 
 var workflowTestcases = map[string]testutils.TestCase{
@@ -32,10 +32,8 @@ func (h *workflowBasic) Execute(filePath string) error {
 	if err != nil {
 		return err
 	}
-	if len(results) != 2 {
-		return errIncorrectResultsCount(results)
-	}
-	return nil
+
+	return expectResultsCount(results, 2)
 }
 
 type workflowConditionMatched struct{}
@@ -53,10 +51,8 @@ func (h *workflowConditionMatched) Execute(filePath string) error {
 	if err != nil {
 		return err
 	}
-	if len(results) != 1 {
-		return errIncorrectResultsCount(results)
-	}
-	return nil
+
+	return expectResultsCount(results, 1)
 }
 
 type workflowConditionUnmatch struct{}
@@ -74,10 +70,8 @@ func (h *workflowConditionUnmatch) Execute(filePath string) error {
 	if err != nil {
 		return err
 	}
-	if len(results) != 0 {
-		return errIncorrectResultsCount(results)
-	}
-	return nil
+
+	return expectResultsCount(results, 0)
 }
 
 type workflowMatcherName struct{}
@@ -95,8 +89,6 @@ func (h *workflowMatcherName) Execute(filePath string) error {
 	if err != nil {
 		return err
 	}
-	if len(results) != 1 {
-		return errIncorrectResultsCount(results)
-	}
-	return nil
+
+	return expectResultsCount(results, 1)
 }

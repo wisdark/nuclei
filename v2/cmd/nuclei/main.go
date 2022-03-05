@@ -3,12 +3,18 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 
+	"github.com/projectdiscovery/fileutil"
 	"github.com/projectdiscovery/goflags"
 	"github.com/projectdiscovery/gologger"
+	"github.com/projectdiscovery/interactsh/pkg/client"
 	"github.com/projectdiscovery/nuclei/v2/internal/runner"
+	"github.com/projectdiscovery/nuclei/v2/pkg/catalog/config"
 	"github.com/projectdiscovery/nuclei/v2/pkg/model/types/severity"
+	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/http"
+	templateTypes "github.com/projectdiscovery/nuclei/v2/pkg/templates/types"
 	"github.com/projectdiscovery/nuclei/v2/pkg/types"
 )
 
@@ -18,6 +24,10 @@ var (
 )
 
 func main() {
+	if err := runner.ConfigureOptions(); err != nil {
+		gologger.Fatal().Msgf("Could not initialize options: %s\n", err)
+	}
+
 	readConfig()
 
 	runner.ParseOptions(options)
@@ -29,10 +39,38 @@ func main() {
 	if nucleiRunner == nil {
 		return
 	}
+
+	// Setup graceful exits
+	resumeFileName := types.DefaultResumeFilePath()
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	go func() {
+		for range c {
+			gologger.Info().Msgf("CTRL+C pressed: Exiting\n")
+			nucleiRunner.Close()
+			if options.ShouldSaveResume() {
+				gologger.Info().Msgf("Creating resume file: %s\n", resumeFileName)
+				err := nucleiRunner.SaveResumeConfig(resumeFileName)
+				if err != nil {
+					gologger.Error().Msgf("Couldn't create resume file: %s\n", err)
+				}
+			}
+			os.Exit(1)
+		}
+	}()
+
 	if err := nucleiRunner.RunEnumeration(); err != nil {
-		gologger.Fatal().Msgf("Could not run nuclei: %s\n", err)
+		if options.Validate {
+			gologger.Fatal().Msgf("Could not validate templates: %s\n", err)
+		} else {
+			gologger.Fatal().Msgf("Could not run nuclei: %s\n", err)
+		}
 	}
 	nucleiRunner.Close()
+	// on successful execution remove the resume file in case it exists
+	if fileutil.FileExists(resumeFileName) {
+		os.Remove(resumeFileName)
+	}
 }
 
 func readConfig() {
@@ -50,25 +88,34 @@ on extensive configurability, massive extensibility and ease of use.`)
 	createGroup(flagSet, "input", "Target",
 		flagSet.StringSliceVarP(&options.Targets, "target", "u", []string{}, "target URLs/hosts to scan"),
 		flagSet.StringVarP(&options.TargetsFilePath, "list", "l", "", "path to file containing a list of target URLs/hosts to scan (one per line)"),
+		flagSet.StringVar(&options.Resume, "resume", "", "Resume scan using resume.cfg (clustering will be disabled)"),
 	)
 
 	createGroup(flagSet, "templates", "Templates",
-		flagSet.StringSliceVarP(&options.Templates, "templates", "t", []string{}, "template or template directory paths to include in the scan"),
+
 		flagSet.BoolVarP(&options.NewTemplates, "new-templates", "nt", false, "run only new templates added in latest nuclei-templates release"),
-		flagSet.StringSliceVarP(&options.Workflows, "workflows", "w", []string{}, "workflow or workflow directory paths to include in the scan"),
+		flagSet.FileNormalizedOriginalStringSliceVarP(&options.Templates, "templates", "t", []string{}, "list of template or template directory to run (comma-separated, file)"),
+		flagSet.FileNormalizedOriginalStringSliceVarP(&options.TemplateURLs, "template-url", "tu", []string{}, "list of template urls to run (comma-separated, file)"),
+		flagSet.FileNormalizedOriginalStringSliceVarP(&options.Workflows, "workflows", "w", []string{}, "list of workflow or workflow directory to run (comma-separated, file)"),
+		flagSet.FileNormalizedOriginalStringSliceVarP(&options.WorkflowURLs, "workflow-url", "wu", []string{}, "list of workflow urls to run (comma-separated, file)"),
 		flagSet.BoolVar(&options.Validate, "validate", false, "validate the passed templates to nuclei"),
 		flagSet.BoolVar(&options.TemplateList, "tl", false, "list all available templates"),
+		flagSet.StringSliceVarConfigOnly(&options.RemoteTemplateDomainList, "remote-template-domain", []string{"api.nuclei.sh"}, "allowed domain list to load remote templates from"),
 	)
 
 	createGroup(flagSet, "filters", "Filtering",
-		flagSet.NormalizedStringSliceVar(&options.Tags, "tags", []string{}, "execute a subset of templates that contain the provided tags"),
-		flagSet.NormalizedStringSliceVarP(&options.IncludeTags, "include-tags", "itags", []string{}, "tags from the default deny list that permit executing more intrusive templates"), // TODO show default deny list
-		flagSet.NormalizedStringSliceVarP(&options.ExcludeTags, "exclude-tags", "etags", []string{}, "exclude templates with the provided tags"),
-		flagSet.StringSliceVarP(&options.IncludeTemplates, "include-templates", "it", []string{}, "templates to be executed even if they are excluded either by default or configuration"),
-		flagSet.StringSliceVarP(&options.ExcludedTemplates, "exclude-templates", "et", []string{}, "template or template directory paths to exclude"),
-		flagSet.VarP(&options.Severities, "severity", "s", fmt.Sprintf("Templates to run based on severity. Possible values: %s", severity.GetSupportedSeverities().String())),
-		flagSet.VarP(&options.ExcludeSeverities, "exclude-severity", "es", fmt.Sprintf("Templates to exclude based on severity. Possible values: %s", severity.GetSupportedSeverities().String())),
-		flagSet.NormalizedStringSliceVarP(&options.Author, "author", "a", []string{}, "execute templates that are (co-)created by the specified authors"),
+		flagSet.FileNormalizedStringSliceVarP(&options.Authors, "author", "a", []string{}, "templates to run based on authors (comma-separated, file)"),
+		flagSet.FileNormalizedStringSliceVar(&options.Tags, "tags", []string{}, "templates to run based on tags (comma-separated, file)"),
+		flagSet.FileNormalizedStringSliceVarP(&options.ExcludeTags, "exclude-tags", "etags", []string{}, "templates to exclude based on tags (comma-separated, file)"),
+		flagSet.FileNormalizedStringSliceVarP(&options.IncludeTags, "include-tags", "itags", []string{}, "tags to be executed even if they are excluded either by default or configuration"), // TODO show default deny list
+		flagSet.FileNormalizedStringSliceVarP(&options.IncludeIds, "template-id", "id", []string{}, "templates to run based on template ids (comma-separated, file)"),
+		flagSet.FileNormalizedStringSliceVarP(&options.ExcludeIds, "exclude-id", "eid", []string{}, "templates to exclude based on template ids (comma-separated, file)"),
+		flagSet.FileNormalizedOriginalStringSliceVarP(&options.IncludeTemplates, "include-templates", "it", []string{}, "templates to be executed even if they are excluded either by default or configuration"),
+		flagSet.FileNormalizedOriginalStringSliceVarP(&options.ExcludedTemplates, "exclude-templates", "et", []string{}, "template or template directory to exclude (comma-separated, file)"),
+		flagSet.VarP(&options.Severities, "severity", "s", fmt.Sprintf("templates to run based on severity. Possible values: %s", severity.GetSupportedSeverities().String())),
+		flagSet.VarP(&options.ExcludeSeverities, "exclude-severity", "es", fmt.Sprintf("templates to exclude based on severity. Possible values: %s", severity.GetSupportedSeverities().String())),
+		flagSet.VarP(&options.Protocols, "type", "pt", fmt.Sprintf("templates to run based on protocol type. Possible values: %s", templateTypes.GetSupportedProtocolTypes())),
+		flagSet.VarP(&options.ExcludeProtocols, "exclude-type", "ept", fmt.Sprintf("templates to exclude based on protocol type. Possible values: %s", templateTypes.GetSupportedProtocolTypes())),
 	)
 
 	createGroup(flagSet, "output", "Output",
@@ -77,9 +124,10 @@ on extensive configurability, massive extensibility and ease of use.`)
 		flagSet.BoolVarP(&options.NoColor, "no-color", "nc", false, "disable output content coloring (ANSI escape codes)"),
 		flagSet.BoolVar(&options.JSON, "json", false, "write output in JSONL(ines) format"),
 		flagSet.BoolVarP(&options.JSONRequests, "include-rr", "irr", false, "include request/response pairs in the JSONL output (for findings only)"),
-		flagSet.BoolVarP(&options.NoMeta, "no-meta", "nm", false, "don't display match metadata"),
-		flagSet.BoolVarP(&options.NoTimestamp, "no-timestamp", "nts", false, "don't display timestamp metadata in CLI output"),
-		flagSet.StringVarP(&options.ReportingDB, "report-db", "rdb", "", "local nuclei reporting database (always use this to persist report data)"),
+		flagSet.BoolVarP(&options.NoMeta, "no-meta", "nm", false, "disable printing result metadata in cli output"),
+		flagSet.BoolVarP(&options.NoTimestamp, "no-timestamp", "nts", false, "disable printing timestamp in cli output"),
+		flagSet.StringVarP(&options.ReportingDB, "report-db", "rdb", "", "nuclei reporting database (always use this to persist report data)"),
+		flagSet.BoolVarP(&options.MatcherStatus, "matcher-status", "ms", false, "display match failure status"),
 		flagSet.StringVarP(&options.MarkdownExportDirectory, "markdown-export", "me", "", "directory to export results in markdown format"),
 		flagSet.StringVarP(&options.SarifExport, "sarif-export", "se", "", "file to export results in SARIF format"),
 	)
@@ -93,15 +141,19 @@ on extensive configurability, massive extensibility and ease of use.`)
 		flagSet.BoolVarP(&options.SystemResolvers, "system-resolvers", "sr", false, "use system DNS resolving as error fallback"),
 		flagSet.BoolVar(&options.OfflineHTTP, "passive", false, "enable passive HTTP response processing mode"),
 		flagSet.BoolVarP(&options.EnvironmentVariables, "env-vars", "ev", false, "enable environment variables to be used in template"),
+		flagSet.StringVarP(&options.ClientCertFile, "client-cert", "cc", "", "client certificate file (PEM-encoded) used for authenticating against scanned hosts"),
+		flagSet.StringVarP(&options.ClientKeyFile, "client-key", "ck", "", "client key file (PEM-encoded) used for authenticating against scanned hosts"),
+		flagSet.StringVarP(&options.ClientCAFile, "client-ca", "ca", "", "client certificate authority file (PEM-encoded) used for authenticating against scanned hosts"),
+		flagSet.BoolVar(&options.ZTLS, "ztls", false, "Use ztls library with autofallback to standard one for tls13"),
 	)
 
 	createGroup(flagSet, "interactsh", "interactsh",
-		flagSet.StringVarP(&options.InteractshURL, "interactsh-server", "iserver", "https://interactsh.com", "interactsh server url for self-hosted instance"),
+		flagSet.StringVarP(&options.InteractshURL, "interactsh-server", "iserver", "", fmt.Sprintf("interactsh server url for self-hosted instance (default: %s)", client.DefaultOptions.ServerURL)),
 		flagSet.StringVarP(&options.InteractshToken, "interactsh-token", "itoken", "", "authentication token for self-hosted interactsh server"),
 		flagSet.IntVar(&options.InteractionsCacheSize, "interactions-cache-size", 5000, "number of requests to keep in the interactions cache"),
 		flagSet.IntVar(&options.InteractionsEviction, "interactions-eviction", 60, "number of seconds to wait before evicting requests from cache"),
 		flagSet.IntVar(&options.InteractionsPollDuration, "interactions-poll-duration", 5, "number of seconds to wait before each interaction poll request"),
-		flagSet.IntVar(&options.InteractionsColldownPeriod, "interactions-cooldown-period", 5, "extra time for interaction polling before exiting"),
+		flagSet.IntVar(&options.InteractionsCoolDownPeriod, "interactions-cooldown-period", 5, "extra time for interaction polling before exiting"),
 		flagSet.BoolVarP(&options.NoInteractsh, "no-interactsh", "ni", false, "disable interactsh server for OAST testing, exclude OAST based templates"),
 	)
 
@@ -110,20 +162,23 @@ on extensive configurability, massive extensibility and ease of use.`)
 		flagSet.IntVarP(&options.RateLimitMinute, "rate-limit-minute", "rlm", 0, "maximum number of requests to send per minute"),
 		flagSet.IntVarP(&options.BulkSize, "bulk-size", "bs", 25, "maximum number of hosts to be analyzed in parallel per template"),
 		flagSet.IntVarP(&options.TemplateThreads, "concurrency", "c", 25, "maximum number of templates to be executed in parallel"),
+		flagSet.IntVarP(&options.HeadlessBulkSize, "headless-bulk-size", "hbs", 10, "maximum number of headless hosts to be analyzed in parallel per template"),
+		flagSet.IntVarP(&options.HeadlessTemplateThreads, "headless-concurrency", "hc", 10, "maximum number of headless templates to be executed in parallel"),
 	)
 
 	createGroup(flagSet, "optimization", "Optimizations",
 		flagSet.IntVar(&options.Timeout, "timeout", 5, "time to wait in seconds before timeout"),
 		flagSet.IntVar(&options.Retries, "retries", 1, "number of times to retry a failed request"),
+		flagSet.BoolVarP(&options.LeaveDefaultPorts, "leave-default-ports", "ldp", false, "leave default HTTP/HTTPS ports (eg. host:80,host:443"),
 		flagSet.IntVarP(&options.MaxHostError, "max-host-error", "mhe", 30, "max errors for a host before skipping from scan"),
 		flagSet.BoolVar(&options.Project, "project", false, "use a project folder to avoid sending same request multiple times"),
 		flagSet.StringVar(&options.ProjectPath, "project-path", os.TempDir(), "set a specific project path"),
 		flagSet.BoolVarP(&options.StopAtFirstMatch, "stop-at-first-path", "spm", false, "stop processing HTTP requests after the first match (may break template/workflow logic)"),
-		flagSet.BoolVar(&options.Stream, "stream", false, "Stream mode - start elaborating without sorting the input"),
+		flagSet.BoolVar(&options.Stream, "stream", false, "stream mode - start elaborating without sorting the input"),
 	)
 
 	createGroup(flagSet, "headless", "Headless",
-		flagSet.BoolVar(&options.Headless, "headless", false, "enable templates that require headless browser support"),
+		flagSet.BoolVar(&options.Headless, "headless", false, "enable templates that require headless browser support (root user on linux will disable sandbox)"),
 		flagSet.IntVar(&options.PageTimeout, "page-timeout", 20, "seconds to wait for each page in headless mode"),
 		flagSet.BoolVarP(&options.ShowBrowser, "show-browser", "sb", false, "show the browser on the screen when running templates with headless mode"),
 		flagSet.BoolVarP(&options.UseInstalledChrome, "system-chrome", "sc", false, "Use local installed chrome browser instead of nuclei installed"),
@@ -133,12 +188,9 @@ on extensive configurability, massive extensibility and ease of use.`)
 		flagSet.BoolVar(&options.Debug, "debug", false, "show all requests and responses"),
 		flagSet.BoolVar(&options.DebugRequests, "debug-req", false, "show all sent requests"),
 		flagSet.BoolVar(&options.DebugResponse, "debug-resp", false, "show all received responses"),
-
-		/* TODO why the separation? http://proxy:port vs socks5://proxy:port etc
-		   TODO should auto-set the HTTP_PROXY variable for the process? */
-		flagSet.StringVarP(&options.ProxyURL, "proxy-url", "proxy", "", "URL of the HTTP proxy server"),
-		flagSet.StringVar(&options.ProxySocksURL, "proxy-socks-url", "", "URL of the SOCKS proxy server"),
+		flagSet.NormalizedOriginalStringSliceVarP(&options.Proxy, "proxy", "p", []string{}, "List of HTTP(s)/SOCKS5 proxy to use (comma separated or file input)"),
 		flagSet.StringVarP(&options.TraceLogFile, "trace-log", "tlog", "", "file to write sent requests trace log"),
+		flagSet.StringVarP(&options.ErrorLogFile, "error-log", "elog", "", "file to write sent requests error log"),
 		flagSet.BoolVar(&options.Version, "version", false, "show nuclei version"),
 		flagSet.BoolVarP(&options.Verbose, "verbose", "v", false, "show verbose output"),
 		flagSet.BoolVar(&options.VerboseVerbose, "vv", false, "display templates loaded for scan"),
@@ -162,9 +214,17 @@ on extensive configurability, massive extensibility and ease of use.`)
 
 	_ = flagSet.Parse()
 
+	if options.LeaveDefaultPorts {
+		http.LeaveDefaultPorts = true
+	}
+
 	if cfgFile != "" {
 		if err := flagSet.MergeConfigFile(cfgFile); err != nil {
 			gologger.Fatal().Msgf("Could not read config: %s\n", err)
+		}
+		cfgFileFolder := filepath.Dir(cfgFile)
+		if err := config.OverrideIgnoreFilePath(cfgFileFolder); err != nil {
+			gologger.Warning().Msgf("Could not read ignore file from custom path: %s\n", err)
 		}
 	}
 }
@@ -175,10 +235,3 @@ func createGroup(flagSet *goflags.FlagSet, groupName, description string, flags 
 		currentFlag.Group(groupName)
 	}
 }
-
-/*
-HacktoberFest update: Below, you can find our ticket recommendations. Tasks with the "good first issue" label are suitable for first time contributors. If you have other ideas, or need help with getting started, join our Discord channel or reach out to @forgedhallpass.
-
-https://github.com/issues?q=is%3Aopen+is%3Aissue+user%3Aprojectdiscovery+label%3AHacktoberfest
-
-*/

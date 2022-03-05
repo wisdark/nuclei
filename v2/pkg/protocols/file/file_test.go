@@ -5,9 +5,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/projectdiscovery/nuclei/v2/internal/testutils"
 	"github.com/projectdiscovery/nuclei/v2/pkg/model"
 	"github.com/projectdiscovery/nuclei/v2/pkg/model/types/severity"
+	"github.com/projectdiscovery/nuclei/v2/pkg/testutils"
 )
 
 func TestFileCompile(t *testing.T) {
@@ -16,11 +16,11 @@ func TestFileCompile(t *testing.T) {
 	testutils.Init(options)
 	templateID := "testing-file"
 	request := &Request{
-		ID:                templateID,
-		MaxSize:           1024,
-		NoRecursive:       false,
-		Extensions:        []string{"all", ".lock"},
-		ExtensionDenylist: []string{".go"},
+		ID:          templateID,
+		MaxSize:     1024,
+		NoRecursive: false,
+		Extensions:  []string{"all", ".lock"},
+		DenyList:    []string{".go"},
 	}
 	executerOpts := testutils.NewMockExecuterOptions(options, &testutils.TemplateInfo{
 		ID:   templateID,
@@ -29,7 +29,7 @@ func TestFileCompile(t *testing.T) {
 	err := request.Compile(executerOpts)
 	require.Nil(t, err, "could not compile file request")
 
-	require.Contains(t, request.extensionDenylist, ".go", "could not get .go in denylist")
+	require.Contains(t, request.denyList, ".go", "could not get .go in denylist")
 	require.NotContains(t, request.extensions, ".go", "could get .go in allowlist")
 	require.True(t, request.allExtensions, "could not get correct allExtensions")
 }

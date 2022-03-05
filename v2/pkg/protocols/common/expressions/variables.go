@@ -10,47 +10,77 @@ var unresolvedVariablesRegex = regexp.MustCompile(`(?:%7[B|b]|\{){2}([^}]+)(?:%7
 
 // ContainsUnresolvedVariables returns an error with variable names if the passed
 // input contains unresolved {{<pattern-here>}} variables.
-func ContainsUnresolvedVariables(data string) error {
-	matches := unresolvedVariablesRegex.FindAllStringSubmatch(data, -1)
-	if len(matches) == 0 {
-		return nil
+func ContainsUnresolvedVariables(items ...string) error {
+	for _, data := range items {
+		matches := unresolvedVariablesRegex.FindAllStringSubmatch(data, -1)
+		if len(matches) == 0 {
+			return nil
+		}
+		var unresolvedVariables []string
+		for _, match := range matches {
+			if len(match) < 2 {
+				continue
+			}
+			unresolvedVariables = append(unresolvedVariables, match[1])
+		}
+		if len(unresolvedVariables) > 0 {
+			return errors.New("unresolved variables found: " + strings.Join(unresolvedVariables, ","))
+		}
 	}
-	errorString := &strings.Builder{}
-	errorString.WriteString("unresolved variables found: ")
 
-	for i, match := range matches {
-		if len(match) < 2 {
-			continue
-		}
-		errorString.WriteString(match[1])
-		if i != len(matches)-1 {
-			errorString.WriteString(",")
-		}
-	}
-	errorMessage := errorString.String()
-	return errors.New(errorMessage)
+	return nil
 }
 
-func ContainsVariablesWithNames(data string, names map[string]interface{}) error {
-	matches := unresolvedVariablesRegex.FindAllStringSubmatch(data, -1)
-	if len(matches) == 0 {
-		return nil
-	}
-	errorString := &strings.Builder{}
-	errorString.WriteString("unresolved variables with values found: ")
-
-	for i, match := range matches {
-		if len(match) < 2 {
-			continue
+// ContainsVariablesWithNames returns an error with variable names if the passed
+// input contains unresolved {{<pattern-here>}} variables within the provided list
+func ContainsVariablesWithNames(names map[string]interface{}, items ...string) error {
+	for _, data := range items {
+		matches := unresolvedVariablesRegex.FindAllStringSubmatch(data, -1)
+		if len(matches) == 0 {
+			return nil
 		}
-		matchName := match[1]
-		if _, ok := names[matchName]; !ok {
-			errorString.WriteString(matchName)
-			if i != len(matches)-1 {
-				errorString.WriteString(",")
+		var unresolvedVariables []string
+		for _, match := range matches {
+			if len(match) < 2 {
+				continue
+			}
+			matchName := match[1]
+			if _, ok := names[matchName]; !ok {
+				unresolvedVariables = append(unresolvedVariables, matchName)
 			}
 		}
+		if len(unresolvedVariables) > 0 {
+			return errors.New("unresolved variables with values found: " + strings.Join(unresolvedVariables, ","))
+		}
 	}
-	errorMessage := errorString.String()
-	return errors.New(errorMessage)
+
+	return nil
+}
+
+// ContainsVariablesWithIgnoreList returns an error with variable names if the passed
+// input contains unresolved {{<pattern-here>}} other than the ones listed in the ignore list
+func ContainsVariablesWithIgnoreList(skipNames map[string]interface{}, items ...string) error {
+	var unresolvedVariables []string
+	for _, data := range items {
+		matches := unresolvedVariablesRegex.FindAllStringSubmatch(data, -1)
+		if len(matches) == 0 {
+			return nil
+		}
+		for _, match := range matches {
+			if len(match) < 2 {
+				continue
+			}
+			matchName := match[1]
+			if _, ok := skipNames[matchName]; ok {
+				continue
+			}
+			unresolvedVariables = append(unresolvedVariables, matchName)
+		}
+	}
+
+	if len(unresolvedVariables) > 0 {
+		return errors.New("unresolved variables with values found: " + strings.Join(unresolvedVariables, ","))
+	}
+
+	return nil
 }

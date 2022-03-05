@@ -18,9 +18,11 @@ func NewLoader(options *protocols.ExecuterOptions) (model.WorkflowLoader, error)
 	tagFilter := filter.New(&filter.Config{
 		Tags:        options.Options.Tags,
 		ExcludeTags: options.Options.ExcludeTags,
-		Authors:     options.Options.Author,
+		Authors:     options.Options.Authors,
 		Severities:  options.Options.Severities,
 		IncludeTags: options.Options.IncludeTags,
+		IncludeIds:  options.Options.IncludeIds,
+		ExcludeIds:  options.Options.ExcludeIds,
 	})
 	pathFilter := filter.NewPathFilter(&filter.PathFilterConfig{
 		IncludedTemplates: options.Options.IncludeTemplates,

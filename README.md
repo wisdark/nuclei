@@ -7,12 +7,14 @@
 
 
 <p align="center">
-<a href="https://goreportcard.com/report/github.com/projectdiscovery/nuclei"><img src="https://goreportcard.com/badge/github.com/projectdiscovery/nuclei"></a>
-<a href="https://github.com/projectdiscovery/nuclei/issues"><img src="https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat"></a>
-<a href="https://github.com/projectdiscovery/nuclei/releases"><img src="https://img.shields.io/github/release/projectdiscovery/nuclei"></a>
-<a href="https://twitter.com/pdnuclei"><img src="https://img.shields.io/twitter/follow/pdnuclei.svg?logo=twitter"></a>
+<img src="https://img.shields.io/github/go-mod/go-version/projectdiscovery/nuclei?filename=v2%2Fgo.mod">
+<a href="https://github.com/projectdiscovery/nuclei/releases"><img src="https://img.shields.io/github/downloads/projectdiscovery/nuclei/total">
+<a href="https://github.com/projectdiscovery/nuclei/graphs/contributors"><img src="https://img.shields.io/github/contributors-anon/projectdiscovery/nuclei">
+<a href="https://github.com/projectdiscovery/nuclei/releases/"><img src="https://img.shields.io/github/release/projectdiscovery/nuclei">
+<a href="https://github.com/projectdiscovery/nuclei/issues"><img src="https://img.shields.io/github/issues-raw/projectdiscovery/nuclei">
+<a href="https://github.com/projectdiscovery/nuclei/discussions"><img src="https://img.shields.io/github/discussions/projectdiscovery/nuclei">
 <a href="https://discord.gg/projectdiscovery"><img src="https://img.shields.io/discord/695645237418131507.svg?logo=discord"></a>
-<a href="https://github.com/projectdiscovery/nuclei/actions/workflows/build-test.yml"><img src="https://github.com/projectdiscovery/nuclei/actions/workflows/build-test.yml/badge.svg?branch=master"></a>
+<a href="https://twitter.com/pdnuclei"><img src="https://img.shields.io/twitter/follow/pdnuclei.svg?logo=twitter"></a>
 </p>
       
 <p align="center">
@@ -26,11 +28,16 @@
   <a href="https://discord.gg/projectdiscovery">Join Discord</a>
 </p>
 
+<p align="center">
+  <a href="https://github.com/projectdiscovery/nuclei/blob/master/README.md">English</a> •
+  <a href="https://github.com/projectdiscovery/nuclei/blob/master/README_CN.md">中文</a>
+</p>
+
 ---
 
-Nuclei is used to send requests across targets based on a template leading to zero false positives and providing fast scanning on large number of hosts. Nuclei offers scanning for a variety of protocols including TCP, DNS, HTTP, File, etc. With powerful and flexible templating, all kinds of security checks can be modelled with Nuclei.
+Nuclei is used to send requests across targets based on a template, leading to zero false positives and providing fast scanning on a large number of hosts. Nuclei offers scanning for a variety of protocols, including TCP, DNS, HTTP, SSL, File, Whois, Websocket, Headless etc. With powerful and flexible templating, Nuclei can be used to model all kinds of security checks.
 
-We have a [dedicated repository](https://github.com/projectdiscovery/nuclei-templates) that houses various type of vulnerability templates contributed by **more than 200** security researchers and engineers.
+We have a [dedicated repository](https://github.com/projectdiscovery/nuclei-templates) that houses various type of vulnerability templates contributed by **more than 300** security researchers and engineers.
 
 
 
@@ -58,7 +65,7 @@ go install -v github.com/projectdiscovery/nuclei/v2/cmd/nuclei@latest
 
 ### Nuclei Templates
 
-Nuclei has had built-in support for automatic template download/update as default since version [v2.5.2](https://github.com/projectdiscovery/nuclei/releases/tag/v2.5.2). [**Nuclei-Templates**](https://github.com/projectdiscovery/nuclei-templates) project provides a community-contributed list of ready-to-use templates that is constantly updated.
+Nuclei has built-in support for automatic template download/update as default since version [v2.5.2](https://github.com/projectdiscovery/nuclei/releases/tag/v2.5.2). [**Nuclei-Templates**](https://github.com/projectdiscovery/nuclei-templates) project provides a community-contributed list of ready-to-use templates that is constantly updated.
 
 You may still use the `update-templates` flag to update the nuclei templates at any time; You can write your own checks for your individual workflow and needs following Nuclei's [templating guide](https://nuclei.projectdiscovery.io/templating-guide/).
 
@@ -88,23 +95,30 @@ Flags:
 TARGET:
    -u, -target string[]  target URLs/hosts to scan
    -l, -list string      path to file containing a list of target URLs/hosts to scan (one per line)
+   -resume string        Resume scan using resume.cfg (clustering will be disabled)
 
 TEMPLATES:
-   -t, -templates string[]  template or template directory paths to include in the scan
-   -nt, -new-templates      run only new templates added in latest nuclei-templates release
-   -w, -workflows string[]  workflow or workflow directory paths to include in the scan
-   -validate                validate the passed templates to nuclei
-   -tl                      list all available templates
+   -nt, -new-templates          run only new templates added in latest nuclei-templates release
+   -t, -templates string[]      list of template or template directory to run (comma-separated, file)
+   -tu, -template-url string[]  list of template urls to run (comma-separated, file)
+   -w, -workflows string[]      list of workflow or workflow directory to run (comma-separated, file)
+   -wu, -workflow-url string[]  list of workflow urls to run (comma-separated, file)
+   -validate                    validate the passed templates to nuclei
+   -tl                          list all available templates
 
 FILTERING:
-   -tags string[]                    execute a subset of templates that contain the provided tags
-   -etags, -exclude-tags string[]    exclude templates with the provided tags
-   -itags, -include-tags string[]    tags from the default deny list that permit executing more intrusive templates
-   -et, -exclude-templates string[]  template or template directory paths to exclude
+   -a, -author string[]              templates to run based on authors (comma-separated, file)
+   -tags string[]                    templates to run based on tags (comma-separated, file)
+   -etags, -exclude-tags string[]    templates to exclude based on tags (comma-separated, file)
+   -itags, -include-tags string[]    tags to be executed even if they are excluded either by default or configuration
+   -id, -template-id string[]        templates to run based on template ids (comma-separated, file)
+   -eid, -exclude-id string[]        templates to exclude based on template ids (comma-separated, file)
    -it, -include-templates string[]  templates to be executed even if they are excluded either by default or configuration
-   -s, -severity value[]             Templates to run based on severity. Possible values - info,low,medium,high,critical
-   -es, -exclude-severity value[]    Templates to exclude based on severity. Possible values - info,low,medium,high,critical
-   -a, -author string[]              execute templates that are (co-)created by the specified authors
+   -et, -exclude-templates string[]  template or template directory to exclude (comma-separated, file)
+   -s, -severity value[]             templates to run based on severity. Possible values: info, low, medium, high, critical, unknown
+   -es, -exclude-severity value[]    templates to exclude based on severity. Possible values: info, low, medium, high, critical, unknown
+   -pt, -type value[]                templates to run based on protocol type. Possible values: dns, file, http, headless, network, workflow, ssl, websocket, whois
+   -ept, -exclude-type value[]       templates to exclude based on protocol type. Possible values: dns, file, http, headless, network, workflow, ssl, websocket, whois
 
 OUTPUT:
    -o, -output string            output file to write found issues/vulnerabilities
@@ -112,9 +126,10 @@ OUTPUT:
    -nc, -no-color                disable output content coloring (ANSI escape codes)
    -json                         write output in JSONL(ines) format
    -irr, -include-rr             include request/response pairs in the JSONL output (for findings only)
-   -nm, -no-meta                 don't display match metadata
-   -nts, -no-timestamp           don't display timestamp metadata in CLI output
-   -rdb, -report-db string       local nuclei reporting database (always use this to persist report data)
+   -nm, -no-meta                 disable printing result metadata in cli output
+   -nts, -no-timestamp           disable printing timestamp in cli output
+   -rdb, -report-db string       nuclei reporting database (always use this to persist report data)
+   -ms, -matcher-status          display match failure status
    -me, -markdown-export string  directory to export results in markdown format
    -se, -sarif-export string     file to export results in SARIF format
 
@@ -127,9 +142,13 @@ CONFIGURATIONS:
    -sr, -system-resolvers      use system DNS resolving as error fallback
    -passive                    enable passive HTTP response processing mode
    -ev, -env-vars              enable environment variables to be used in template
+   -cc, -client-cert string    client certificate file (PEM-encoded) used for authenticating against scanned hosts
+   -ck, -client-key string     client key file (PEM-encoded) used for authenticating against scanned hosts
+   -ca, -client-ca string      client certificate authority file (PEM-encoded) used for authenticating against scanned hosts
+   -ztls                       Use ztls library with autofallback to standard one for tls13
 
 INTERACTSH:
-   -iserver, -interactsh-server string  interactsh server url for self-hosted instance (default "https://interactsh.com")
+   -iserver, -interactsh-server string  interactsh server url for self-hosted instance (default: oast.pro,oast.live,oast.site,oast.online,oast.fun,oast.me)
    -itoken, -interactsh-token string    authentication token for self-hosted interactsh server
    -interactions-cache-size int         number of requests to keep in the interactions cache (default 5000)
    -interactions-eviction int           number of seconds to wait before evicting requests from cache (default 60)
@@ -138,37 +157,40 @@ INTERACTSH:
    -ni, -no-interactsh                  disable interactsh server for OAST testing, exclude OAST based templates
 
 RATE-LIMIT:
-   -rl, -rate-limit int          maximum number of requests to send per second (default 150)
-   -rlm, -rate-limit-minute int  maximum number of requests to send per minute
-   -bs, -bulk-size int           maximum number of hosts to be analyzed in parallel per template (default 25)
-   -c, -concurrency int          maximum number of templates to be executed in parallel (default 25)
+   -rl, -rate-limit int            maximum number of requests to send per second (default 150)
+   -rlm, -rate-limit-minute int    maximum number of requests to send per minute
+   -bs, -bulk-size int             maximum number of hosts to be analyzed in parallel per template (default 25)
+   -c, -concurrency int            maximum number of templates to be executed in parallel (default 25)
+   -hbs, -headless-bulk-size int   maximum number of headless hosts to be analyzed in parallel per template (default 10)
+   -hc, -headless-concurrency int  maximum number of headless templates to be executed in parallel (default 10)
 
 OPTIMIZATIONS:
-   -timeout int               time to wait in seconds before timeout (default 5)
-   -retries int               number of times to retry a failed request (default 1)
-   -mhe, -max-host-error int  max errors for a host before skipping from scan (default 30)
-   -project                   use a project folder to avoid sending same request multiple times
-   -project-path string       set a specific project path
-   -spm, -stop-at-first-path  stop processing HTTP requests after the first match (may break template/workflow logic)
-   -stream                    Stream mode - start elaborating without sorting the input
+   -timeout int                time to wait in seconds before timeout (default 5)
+   -retries int                number of times to retry a failed request (default 1)
+   -ldp, -leave-default-ports  leave default HTTP/HTTPS ports (eg. host:80,host:443
+   -mhe, -max-host-error int   max errors for a host before skipping from scan (default 30)
+   -project                    use a project folder to avoid sending same request multiple times
+   -project-path string        set a specific project path
+   -spm, -stop-at-first-path   stop processing HTTP requests after the first match (may break template/workflow logic)
+   -stream                     stream mode - start elaborating without sorting the input
 
 HEADLESS:
-   -headless            enable templates that require headless browser support
+   -headless            enable templates that require headless browser support (root user on linux will disable sandbox)
    -page-timeout int    seconds to wait for each page in headless mode (default 20)
    -sb, -show-browser   show the browser on the screen when running templates with headless mode
    -sc, -system-chrome  Use local installed chrome browser instead of nuclei installed
 
 DEBUG:
-   -debug                     show all requests and responses
-   -debug-req                 show all sent requests
-   -debug-resp                show all received responses
-   -proxy, -proxy-url string  URL of the HTTP proxy server
-   -proxy-socks-url string    URL of the SOCKS proxy server
-   -tlog, -trace-log string   file to write sent requests trace log
-   -version                   show nuclei version
-   -v, -verbose               show verbose output
-   -vv                        display extra verbose information
-   -tv, -templates-version    shows the version of the installed nuclei-templates
+   -debug                    show all requests and responses
+   -debug-req                show all sent requests
+   -debug-resp               show all received responses
+   -p, -proxy string[]       List of HTTP(s)/SOCKS5 proxy to use (comma separated or file input)
+   -tlog, -trace-log string  file to write sent requests trace log
+   -elog, -error-log string  file to write sent requests error log
+   -version                  show nuclei version
+   -v, -verbose              show verbose output
+   -vv                       display templates loaded for scan
+   -tv, -templates-version   shows the version of the installed nuclei-templates
 
 UPDATE:
    -update                        update nuclei engine to the latest released version
@@ -247,7 +269,7 @@ Please check our other open-source projects that might fit into your bug bounty 
 
 Nuclei immensely improve how you approach security assessment by augmenting the manual, repetitive processes. Consultancies are already converting their manual assessment steps with Nuclei, it allows them to run set of their custom assessment approach across thousands of hosts in an automated manner. 
 
-Pen-testers get the full power of our public templates and customization capabilities to speed-up their assessment process, and specifically with the regression cycle where you can easily verify the fix.
+Pen-testers get the full power of our public templates and customization capabilities to speed up their assessment process, and specifically with the regression cycle where you can easily verify the fix.
 
 - Easily create your compliance, standards suite (e.g. OWASP Top 10) checklist.
 - With capabilities like [fuzz](https://nuclei.projectdiscovery.io/templating-guide/#advance-fuzzing) and [workflows](https://nuclei.projectdiscovery.io/templating-guide/#workflows), complex manual steps and repetitive assessment can be easily automated with Nuclei.
@@ -277,6 +299,8 @@ We have [a discussion thread around this](https://github.com/projectdiscovery/nu
 
 ### Resources
 
+
+- [Scanning Live Web Applications with Nuclei in CI/CD Pipeline](https://blog.escape.tech/devsecops-part-iii-scanning-live-web-applications/) by [@TristanKalos](https://twitter.com/TristanKalos)
 - [Community Powered Scanning with Nuclei](https://blog.projectdiscovery.io/community-powered-scanning-with-nuclei/)
 - [Nuclei Unleashed - Quickly write complex exploits](https://blog.projectdiscovery.io/nuclei-unleashed-quickly-write-complex-exploits/)
 - [Nuclei - Fuzz all the things](https://blog.projectdiscovery.io/nuclei-fuzz-all-the-things/)

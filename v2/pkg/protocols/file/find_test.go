@@ -8,9 +8,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/projectdiscovery/nuclei/v2/internal/testutils"
 	"github.com/projectdiscovery/nuclei/v2/pkg/model"
 	"github.com/projectdiscovery/nuclei/v2/pkg/model/types/severity"
+	"github.com/projectdiscovery/nuclei/v2/pkg/testutils"
 )
 
 func TestFindInputPaths(t *testing.T) {
@@ -19,11 +19,11 @@ func TestFindInputPaths(t *testing.T) {
 	testutils.Init(options)
 	templateID := "testing-file"
 	request := &Request{
-		ID:                templateID,
-		MaxSize:           1024,
-		NoRecursive:       false,
-		Extensions:        []string{"all", ".lock"},
-		ExtensionDenylist: []string{".go"},
+		ID:          templateID,
+		MaxSize:     1024,
+		NoRecursive: false,
+		Extensions:  []string{"all", ".lock"},
+		DenyList:    []string{".go"},
 	}
 	executerOpts := testutils.NewMockExecuterOptions(options, &testutils.TemplateInfo{
 		ID:   templateID,
@@ -44,7 +44,7 @@ func TestFindInputPaths(t *testing.T) {
 		"test.js":           "TEST",
 	}
 	for k, v := range files {
-		err = ioutil.WriteFile(filepath.Join(tempDir, k), []byte(v), 0777)
+		err = ioutil.WriteFile(filepath.Join(tempDir, k), []byte(v), os.ModePerm)
 		require.Nil(t, err, "could not write temporary file")
 	}
 	expected := []string{"config.yaml", "final.yaml", "test.js"}

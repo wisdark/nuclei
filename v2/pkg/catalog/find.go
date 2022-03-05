@@ -7,6 +7,7 @@ import (
 
 	"github.com/karrick/godirwalk"
 	"github.com/pkg/errors"
+
 	"github.com/projectdiscovery/gologger"
 )
 
@@ -17,14 +18,21 @@ func (c *Catalog) GetTemplatesPath(definitions []string) []string {
 	allTemplates := []string{}
 
 	for _, t := range definitions {
-		paths, err := c.GetTemplatePath(t)
-		if err != nil {
-			gologger.Error().Msgf("Could not find template '%s': %s\n", t, err)
-		}
-		for _, path := range paths {
-			if _, ok := processed[path]; !ok {
-				processed[path] = true
-				allTemplates = append(allTemplates, path)
+		if strings.HasPrefix(t, "http") && (strings.HasSuffix(t, ".yaml") || strings.HasSuffix(t, ".yml")) {
+			if _, ok := processed[t]; !ok {
+				processed[t] = true
+				allTemplates = append(allTemplates, t)
+			}
+		} else {
+			paths, err := c.GetTemplatePath(t)
+			if err != nil {
+				gologger.Error().Msgf("Could not find template '%s': %s\n", t, err)
+			}
+			for _, path := range paths {
+				if _, ok := processed[path]; !ok {
+					processed[path] = true
+					allTemplates = append(allTemplates, path)
+				}
 			}
 		}
 	}
@@ -79,7 +87,7 @@ func (c *Catalog) GetTemplatePath(target string) ([]string, error) {
 }
 
 // convertPathToAbsolute resolves the paths provided to absolute paths
-// before doing any operations on them regardless of them being blob, folders, files, etc.
+// before doing any operations on them regardless of them being BLOB, folders, files, etc.
 func (c *Catalog) convertPathToAbsolute(t string) (string, error) {
 	if strings.Contains(t, "*") {
 		file := filepath.Base(t)

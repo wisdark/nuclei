@@ -1,8 +1,10 @@
 package types
 
 import (
+	"github.com/projectdiscovery/fileutil"
 	"github.com/projectdiscovery/goflags"
 	"github.com/projectdiscovery/nuclei/v2/pkg/model/types/severity"
+	"github.com/projectdiscovery/nuclei/v2/pkg/templates/types"
 )
 
 // Options contains the configuration options for nuclei scanner.
@@ -10,15 +12,21 @@ type Options struct {
 	// Tags contains a list of tags to execute templates for. Multiple paths
 	// can be specified with -l flag and -tags can be used in combination with
 	// the -l flag.
-	Tags goflags.NormalizedStringSlice
+	Tags goflags.FileNormalizedStringSlice
 	// ExcludeTags is the list of tags to exclude
-	ExcludeTags goflags.NormalizedStringSlice
+	ExcludeTags goflags.FileNormalizedStringSlice
 	// Workflows specifies any workflows to run by nuclei
-	Workflows goflags.StringSlice
+	Workflows goflags.FileOriginalNormalizedStringSlice
+	// WorkflowURLs specifies URLs to a list of workflows to use
+	WorkflowURLs goflags.FileOriginalNormalizedStringSlice
 	// Templates specifies the template/templates to use
-	Templates goflags.StringSlice
+	Templates goflags.FileOriginalNormalizedStringSlice
+	// TemplateURLs specifies URLs to a list of templates to use
+	TemplateURLs goflags.FileOriginalNormalizedStringSlice
+	// RemoteTemplates specifies list of allowed URLs to load remote templates from
+	RemoteTemplateDomainList goflags.StringSlice
 	// 	ExcludedTemplates  specifies the template/templates to exclude
-	ExcludedTemplates goflags.StringSlice
+	ExcludedTemplates goflags.FileOriginalNormalizedStringSlice
 	// CustomHeaders is the list of custom global headers to send with each request.
 	CustomHeaders goflags.StringSlice
 	// Vars is the list of custom global vars
@@ -29,12 +37,20 @@ type Options struct {
 	Severities severity.Severities
 	// ExcludeSeverities specifies severities to exclude
 	ExcludeSeverities severity.Severities
-	// Author filters templates based on their author and only run the matching ones.
-	Author goflags.NormalizedStringSlice
+	// Authors filters templates based on their author and only run the matching ones.
+	Authors goflags.FileNormalizedStringSlice
+	// Protocols contains the protocols to be allowed executed
+	Protocols types.ProtocolTypes
+	// ExcludeProtocols contains protocols to not be executed
+	ExcludeProtocols types.ProtocolTypes
 	// IncludeTags includes specified tags to be run even while being in denylist
-	IncludeTags goflags.NormalizedStringSlice
+	IncludeTags goflags.FileNormalizedStringSlice
 	// IncludeTemplates includes specified templates to be run even while being in denylist
-	IncludeTemplates goflags.StringSlice
+	IncludeTemplates goflags.FileOriginalNormalizedStringSlice
+	// IncludeIds includes specified ids to be run even while being in denylist
+	IncludeIds goflags.FileNormalizedStringSlice
+	// ExcludeIds contains templates ids to not be executed
+	ExcludeIds goflags.FileNormalizedStringSlice
 
 	InternalResolversList []string // normalized from resolvers flag as well as file provided.
 	// ProjectPath allows nuclei to use a user defined project folder
@@ -47,21 +63,23 @@ type Options struct {
 	Targets goflags.StringSlice
 	// TargetsFilePath specifies the targets from a file to scan using templates.
 	TargetsFilePath string
+	// Resume the scan from the state stored in the resume config file
+	Resume string
 	// Output is the file to write found results to.
 	Output string
-	// ProxyURL is the URL for the proxy server
-	ProxyURL string
-	// ProxySocksURL is the URL for the proxy socks server
-	ProxySocksURL string
+	// List of HTTP(s)/SOCKS5 proxy to use (comma separated or file input)
+	Proxy goflags.NormalizedOriginalStringSlice
 	// TemplatesDirectory is the directory to use for storing templates
 	TemplatesDirectory string
 	// TraceLogFile specifies a file to write with the trace of all requests
 	TraceLogFile string
+	// ErrorLogFile specifies a file to write with the errors of all requests
+	ErrorLogFile string
 	// ReportingDB is the db for report storage as well as deduplication
 	ReportingDB string
 	// ReportingConfig is the config file for nuclei reporting module
 	ReportingConfig string
-	// MarkdownExportDirectory is the directory to export reports in markdown format
+	// MarkdownExportDirectory is the directory to export reports in Markdown format
 	MarkdownExportDirectory string
 	// SarifExport is the file to export sarif output format to
 	SarifExport string
@@ -77,6 +95,10 @@ type Options struct {
 	BulkSize int
 	// TemplateThreads is the number of templates executed in parallel
 	TemplateThreads int
+	// HeadlessBulkSize is the of targets analyzed in parallel for each headless template
+	HeadlessBulkSize int
+	// HeadlessTemplateThreads is the number of headless templates executed in parallel
+	HeadlessTemplateThreads int
 	// Timeout is the seconds to wait for a response from the server.
 	Timeout int
 	// Retries is the number of times to retry the request
@@ -94,9 +116,9 @@ type Options struct {
 	// Eviction is the number of seconds after which to automatically discard
 	// interaction requests.
 	InteractionsEviction int
-	// InteractionsColldownPeriod is additional seconds to wait for interactions after closing
+	// InteractionsCoolDownPeriod is additional seconds to wait for interactions after closing
 	// of the poller.
-	InteractionsColldownPeriod int
+	InteractionsCoolDownPeriod int
 	// OfflineHTTP is a flag that specific offline processing of http response
 	// using same matchers/extractors from http protocol without the need
 	// to send a new request, reading responses from a file.
@@ -119,6 +141,8 @@ type Options struct {
 	DebugRequests bool
 	// DebugResponse mode allows debugging response for the engine
 	DebugResponse bool
+	// LeaveDefaultPorts skips normalization of default ports
+	LeaveDefaultPorts bool
 	// Silent suppresses any extra text and only writes found URLs on screen.
 	Silent bool
 	// Version specifies if we should just show version and exit
@@ -164,6 +188,16 @@ type Options struct {
 	NoUpdateTemplates bool
 	// EnvironmentVariables enables support for environment variables
 	EnvironmentVariables bool
+	// MatcherStatus displays optional status for the failed matches as well
+	MatcherStatus bool
+	// ClientCertFile client certificate file (PEM-encoded) used for authenticating against scanned hosts
+	ClientCertFile string
+	// ClientKeyFile client key file (PEM-encoded) used for authenticating against scanned hosts
+	ClientKeyFile string
+	// ClientCAFile client certificate authority file (PEM-encoded) used for authenticating against scanned hosts
+	ClientCAFile string
+	// Use ZTLS library
+	ZTLS bool
 }
 
 func (options *Options) AddVarPayload(key string, value interface{}) {
@@ -176,4 +210,28 @@ func (options *Options) AddVarPayload(key string, value interface{}) {
 
 func (options *Options) VarsPayload() map[string]interface{} {
 	return options.varsPayload
+}
+
+// ShouldLoadResume resume file
+func (options *Options) ShouldLoadResume() bool {
+	return options.Resume != "" && fileutil.FileExists(options.Resume)
+}
+
+// ShouldSaveResume file
+func (options *Options) ShouldSaveResume() bool {
+	return true
+}
+
+// DefaultOptions returns default options for nuclei
+func DefaultOptions() *Options {
+	return &Options{
+		RateLimit:               150,
+		BulkSize:                25,
+		TemplateThreads:         25,
+		HeadlessBulkSize:        10,
+		HeadlessTemplateThreads: 10,
+		Timeout:                 5,
+		Retries:                 1,
+		MaxHostError:            30,
+	}
 }

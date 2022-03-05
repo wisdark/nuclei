@@ -10,21 +10,32 @@ import (
 	"github.com/projectdiscovery/nuclei/v2/pkg/parsers"
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols"
 	"github.com/projectdiscovery/nuclei/v2/pkg/templates"
+	templateTypes "github.com/projectdiscovery/nuclei/v2/pkg/templates/types"
+	"github.com/projectdiscovery/nuclei/v2/pkg/types"
+	"github.com/projectdiscovery/nuclei/v2/pkg/utils/stats"
+	"github.com/projectdiscovery/nuclei/v2/pkg/workflows"
 )
 
 // Config contains the configuration options for the loader
 type Config struct {
-	Templates        []string
-	Workflows        []string
-	ExcludeTemplates []string
-	IncludeTemplates []string
+	Templates                []string
+	TemplateURLs             []string
+	Workflows                []string
+	WorkflowURLs             []string
+	ExcludeTemplates         []string
+	IncludeTemplates         []string
+	RemoteTemplateDomainList []string
 
 	Tags              []string
 	ExcludeTags       []string
+	Protocols         templateTypes.ProtocolTypes
+	ExcludeProtocols  templateTypes.ProtocolTypes
 	Authors           []string
 	Severities        severity.Severities
 	ExcludeSeverities severity.Severities
 	IncludeTags       []string
+	IncludeIds        []string
+	ExcludeIds        []string
 
 	Catalog            *catalog.Catalog
 	ExecutorOptions    protocols.ExecuterOptions
@@ -37,11 +48,39 @@ type Store struct {
 	pathFilter     *filter.PathFilter
 	config         *Config
 	finalTemplates []string
+	finalWorkflows []string
 
 	templates []*templates.Template
 	workflows []*templates.Template
 
 	preprocessor templates.Preprocessor
+}
+
+// NewConfig returns a new loader config
+func NewConfig(options *types.Options, catalog *catalog.Catalog, executerOpts protocols.ExecuterOptions) *Config {
+	loaderConfig := Config{
+		Templates:                options.Templates,
+		Workflows:                options.Workflows,
+		RemoteTemplateDomainList: options.RemoteTemplateDomainList,
+		TemplateURLs:             options.TemplateURLs,
+		WorkflowURLs:             options.WorkflowURLs,
+		ExcludeTemplates:         options.ExcludedTemplates,
+		Tags:                     options.Tags,
+		ExcludeTags:              options.ExcludeTags,
+		IncludeTemplates:         options.IncludeTemplates,
+		Authors:                  options.Authors,
+		Severities:               options.Severities,
+		ExcludeSeverities:        options.ExcludeSeverities,
+		IncludeTags:              options.IncludeTags,
+		IncludeIds:               options.IncludeIds,
+		ExcludeIds:               options.ExcludeIds,
+		TemplatesDirectory:       options.TemplatesDirectory,
+		Protocols:                options.Protocols,
+		ExcludeProtocols:         options.ExcludeProtocols,
+		Catalog:                  catalog,
+		ExecutorOptions:          executerOpts,
+	}
+	return &loaderConfig
 }
 
 // New creates a new template store based on provided configuration
@@ -56,18 +95,34 @@ func New(config *Config) (*Store, error) {
 			Severities:        config.Severities,
 			ExcludeSeverities: config.ExcludeSeverities,
 			IncludeTags:       config.IncludeTags,
+			IncludeIds:        config.IncludeIds,
+			ExcludeIds:        config.ExcludeIds,
+			Protocols:         config.Protocols,
+			ExcludeProtocols:  config.ExcludeProtocols,
 		}),
 		pathFilter: filter.NewPathFilter(&filter.PathFilterConfig{
 			IncludedTemplates: config.IncludeTemplates,
 			ExcludedTemplates: config.ExcludeTemplates,
 		}, config.Catalog),
+		finalTemplates: config.Templates,
+		finalWorkflows: config.Workflows,
+	}
+
+	urlBasedTemplatesProvided := len(config.TemplateURLs) > 0 || len(config.WorkflowURLs) > 0
+	if urlBasedTemplatesProvided {
+		remoteTemplates, remoteWorkflows, err := getRemoteTemplatesAndWorkflows(config.TemplateURLs, config.WorkflowURLs, config.RemoteTemplateDomainList)
+		if err != nil {
+			return store, err
+		}
+		store.finalTemplates = append(store.finalTemplates, remoteTemplates...)
+		store.finalWorkflows = append(store.finalWorkflows, remoteWorkflows...)
 	}
 
 	// Handle a case with no templates or workflows, where we use base directory
-	if len(config.Templates) == 0 && len(config.Workflows) == 0 {
-		config.Templates = append(config.Templates, config.TemplatesDirectory)
+	if len(store.finalTemplates) == 0 && len(store.finalWorkflows) == 0 && !urlBasedTemplatesProvided {
+		store.finalTemplates = []string{config.TemplatesDirectory}
 	}
-	store.finalTemplates = append(store.finalTemplates, config.Templates...)
+
 	return store, nil
 }
 
@@ -90,12 +145,22 @@ func (store *Store) RegisterPreprocessor(preprocessor templates.Preprocessor) {
 // the complete compiled templates for a nuclei execution configuration.
 func (store *Store) Load() {
 	store.templates = store.LoadTemplates(store.finalTemplates)
-	store.workflows = store.LoadWorkflows(store.config.Workflows)
+	store.workflows = store.LoadWorkflows(store.finalWorkflows)
+}
+
+var templateIDPathMap map[string]string
+
+func init() {
+	templateIDPathMap = make(map[string]string)
 }
 
 // ValidateTemplates takes a list of templates and validates them
 // erroring out on discovering any faulty templates.
 func (store *Store) ValidateTemplates(templatesList, workflowsList []string) error {
+	// consider all the templates by default if no templates passed by user
+	if len(templatesList) == 0 {
+		templatesList = store.finalTemplates
+	}
 	templatePaths := store.config.Catalog.GetTemplatesPath(templatesList)
 	workflowPaths := store.config.Catalog.GetTemplatesPath(workflowsList)
 
@@ -105,7 +170,7 @@ func (store *Store) ValidateTemplates(templatesList, workflowsList []string) err
 	if areTemplatesValid(store, filteredTemplatePaths) && areWorkflowsValid(store, filteredWorkflowPaths) {
 		return nil
 	}
-	return errors.New("an error occurred during templates validation")
+	return errors.New("errors occured during template validation")
 }
 
 func areWorkflowsValid(store *Store, filteredWorkflowPaths map[string]struct{}) bool {
@@ -122,6 +187,7 @@ func areTemplatesValid(store *Store, filteredTemplatePaths map[string]struct{}) 
 
 func areWorkflowOrTemplatesValid(store *Store, filteredTemplatePaths map[string]struct{}, isWorkflow bool, load func(templatePath string, tagFilter *filter.TagFilter) (bool, error)) bool {
 	areTemplatesValid := true
+
 	for templatePath := range filteredTemplatePaths {
 		if _, err := load(templatePath, store.tagFilter); err != nil {
 			if isParsingError("Error occurred loading template %s: %s\n", templatePath, err) {
@@ -136,12 +202,39 @@ func areWorkflowOrTemplatesValid(store *Store, filteredTemplatePaths map[string]
 				areTemplatesValid = false
 			}
 		} else {
+			if existingTemplatePath, found := templateIDPathMap[template.ID]; !found {
+				templateIDPathMap[template.ID] = templatePath
+			} else {
+				areTemplatesValid = false
+				gologger.Warning().Msgf("Found duplicate template ID during validation '%s' => '%s': %s\n", templatePath, existingTemplatePath, template.ID)
+			}
 			if !isWorkflow && len(template.Workflows) > 0 {
-				return true
+				continue
+			}
+		}
+		if isWorkflow {
+			if !areWorkflowTemplatesValid(store, template.Workflows) {
+				areTemplatesValid = false
+				continue
 			}
 		}
 	}
 	return areTemplatesValid
+}
+
+func areWorkflowTemplatesValid(store *Store, workflows []*workflows.WorkflowTemplate) bool {
+	for _, workflow := range workflows {
+		if !areWorkflowTemplatesValid(store, workflow.Subtemplates) {
+			return false
+		}
+		_, err := store.config.Catalog.GetTemplatePath(workflow.Template)
+		if err != nil {
+			if isParsingError("Error occurred loading template %s: %s\n", workflow.Template, err) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func isParsingError(message string, template string, err error) bool {
@@ -169,6 +262,7 @@ func (store *Store) LoadTemplates(templatesList []string) []*templates.Template 
 		if loaded {
 			parsed, err := templates.Parse(templatePath, store.preprocessor, store.config.ExecutorOptions)
 			if err != nil {
+				stats.Increment(parsers.RuntimeWarningsStats)
 				gologger.Warning().Msgf("Could not parse template %s: %s\n", templatePath, err)
 			} else if parsed != nil {
 				loadedTemplates = append(loadedTemplates, parsed)
