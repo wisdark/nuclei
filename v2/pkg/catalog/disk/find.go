@@ -1,18 +1,17 @@
-package catalog
+package disk
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/karrick/godirwalk"
 	"github.com/pkg/errors"
-
 	"github.com/projectdiscovery/gologger"
 )
 
 // GetTemplatesPath returns a list of absolute paths for the provided template list.
-func (c *Catalog) GetTemplatesPath(definitions []string) []string {
+func (c *DiskCatalog) GetTemplatesPath(definitions []string) []string {
 	// keeps track of processed dirs and files
 	processed := make(map[string]bool)
 	allTemplates := []string{}
@@ -42,7 +41,7 @@ func (c *Catalog) GetTemplatesPath(definitions []string) []string {
 // GetTemplatePath parses the specified input template path and returns a compiled
 // list of finished absolute paths to the templates evaluating any glob patterns
 // or folders provided as in.
-func (c *Catalog) GetTemplatePath(target string) ([]string, error) {
+func (c *DiskCatalog) GetTemplatePath(target string) ([]string, error) {
 	processed := make(map[string]struct{})
 
 	absPath, err := c.convertPathToAbsolute(target)
@@ -81,14 +80,14 @@ func (c *Catalog) GetTemplatePath(target string) ([]string, error) {
 		return nil, errors.Wrap(err, "could not find directory matches")
 	}
 	if len(matches) == 0 {
-		return nil, errors.Errorf("no templates found in path")
+		return nil, errors.Errorf("no templates found in path %s", absPath)
 	}
 	return matches, nil
 }
 
 // convertPathToAbsolute resolves the paths provided to absolute paths
 // before doing any operations on them regardless of them being BLOB, folders, files, etc.
-func (c *Catalog) convertPathToAbsolute(t string) (string, error) {
+func (c *DiskCatalog) convertPathToAbsolute(t string) (string, error) {
 	if strings.Contains(t, "*") {
 		file := filepath.Base(t)
 		absPath, err := c.ResolvePath(filepath.Dir(t), "")
@@ -101,7 +100,7 @@ func (c *Catalog) convertPathToAbsolute(t string) (string, error) {
 }
 
 // findGlobPathMatches returns the matched files from a glob path
-func (c *Catalog) findGlobPathMatches(absPath string, processed map[string]struct{}) ([]string, error) {
+func (c *DiskCatalog) findGlobPathMatches(absPath string, processed map[string]struct{}) ([]string, error) {
 	matches, err := filepath.Glob(absPath)
 	if err != nil {
 		return nil, errors.Errorf("wildcard found, but unable to glob: %s\n", err)
@@ -118,7 +117,7 @@ func (c *Catalog) findGlobPathMatches(absPath string, processed map[string]struc
 
 // findFileMatches finds if a path is an absolute file. If the path
 // is a file, it returns true otherwise false with no errors.
-func (c *Catalog) findFileMatches(absPath string, processed map[string]struct{}) (match string, matched bool, err error) {
+func (c *DiskCatalog) findFileMatches(absPath string, processed map[string]struct{}) (match string, matched bool, err error) {
 	info, err := os.Stat(absPath)
 	if err != nil {
 		return "", false, err
@@ -134,14 +133,15 @@ func (c *Catalog) findFileMatches(absPath string, processed map[string]struct{})
 }
 
 // findDirectoryMatches finds matches for templates from a directory
-func (c *Catalog) findDirectoryMatches(absPath string, processed map[string]struct{}) ([]string, error) {
+func (c *DiskCatalog) findDirectoryMatches(absPath string, processed map[string]struct{}) ([]string, error) {
 	var results []string
-	err := godirwalk.Walk(absPath, &godirwalk.Options{
-		Unsorted: true,
-		ErrorCallback: func(fsPath string, err error) godirwalk.ErrorAction {
-			return godirwalk.SkipNode
-		},
-		Callback: func(path string, d *godirwalk.Dirent) error {
+	err := filepath.WalkDir(
+		absPath,
+		func(path string, d fs.DirEntry, err error) error {
+			// continue on errors
+			if err != nil {
+				return nil
+			}
 			if !d.IsDir() && strings.HasSuffix(path, ".yaml") {
 				if _, ok := processed[path]; !ok {
 					results = append(results, path)
@@ -150,6 +150,6 @@ func (c *Catalog) findDirectoryMatches(absPath string, processed map[string]stru
 			}
 			return nil
 		},
-	})
+	)
 	return results, err
 }

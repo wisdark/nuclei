@@ -4,11 +4,10 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 
-	"github.com/owenrumney/go-sarif/sarif"
+	"github.com/owenrumney/go-sarif/v2/sarif"
 	"github.com/pkg/errors"
 
 	"github.com/projectdiscovery/nuclei/v2/pkg/model/types/severity"
@@ -40,13 +39,12 @@ func New(options *Options) (*Exporter, error) {
 		return nil, errors.Wrap(err, "could not create sarif exporter")
 	}
 
-	home, err := os.UserHomeDir()
+	templatePath, err := utils.GetDefaultTemplatePath()
 	if err != nil {
-		return nil, errors.Wrap(err, "could not get home dir")
+		return nil, errors.Wrap(err, "could not template path")
 	}
-	templatePath := filepath.Join(home, "nuclei-templates")
 
-	run := sarif.NewRun("nuclei", "https://github.com/projectdiscovery/nuclei")
+	run := sarif.NewRunWithInformationURI("nuclei", "https://github.com/projectdiscovery/nuclei")
 	return &Exporter{options: options, home: templatePath, sarif: report, run: run, mutex: &sync.Mutex{}}, nil
 }
 
@@ -57,9 +55,6 @@ func (exporter *Exporter) Export(event *output.ResultEvent) error {
 	h := sha1.New()
 	_, _ = h.Write([]byte(event.Host))
 	templateID := event.TemplateID + "-" + hex.EncodeToString(h.Sum(nil))
-
-	fullDescription := format.MarkdownDescription(event)
-	sarifSeverity := getSarifSeverity(event)
 
 	var ruleName string
 	if utils.IsNotBlank(event.Info.Name) {
@@ -83,25 +78,27 @@ func (exporter *Exporter) Export(event *output.ResultEvent) error {
 
 	_ = exporter.run.AddRule(templateID).
 		WithDescription(ruleName).
-		WithHelp(fullDescription).
+		WithHelp(sarif.NewMarkdownMultiformatMessageString(format.MarkdownDescription(event))).
 		WithHelpURI(templateURL).
 		WithFullDescription(sarif.NewMultiformatMessageString(ruleDescription))
 
-	result := exporter.run.AddResult(templateID).
-		WithMessage(sarif.NewMessage().WithText(event.Host)).
-		WithLevel(sarifSeverity)
+	result := sarif.NewRuleResult(templateID).
+		WithMessage(sarif.NewTextMessage(event.Host)).
+		WithLevel(getSarifSeverity(event))
+
+	exporter.run.AddResult(result)
 
 	// Also write file match metadata to file
 	if event.Type == "file" && (event.FileToIndexPosition != nil && len(event.FileToIndexPosition) > 0) {
 		for file, line := range event.FileToIndexPosition {
-			result.WithLocation(sarif.NewLocation().WithMessage(sarif.NewMessage().WithText(ruleName)).WithPhysicalLocation(
+			result.AddLocation(sarif.NewLocation().WithMessage(sarif.NewMessage().WithText(ruleName)).WithPhysicalLocation(
 				sarif.NewPhysicalLocation().
 					WithArtifactLocation(sarif.NewArtifactLocation().WithUri(file)).
 					WithRegion(sarif.NewRegion().WithStartColumn(1).WithStartLine(line).WithEndLine(line).WithEndColumn(32)),
 			))
 		}
 	} else {
-		result.WithLocation(sarif.NewLocation().WithMessage(sarif.NewMessage().WithText(event.Host)).WithPhysicalLocation(
+		result.AddLocation(sarif.NewLocation().WithMessage(sarif.NewMessage().WithText(event.Host)).WithPhysicalLocation(
 			sarif.NewPhysicalLocation().
 				WithArtifactLocation(sarif.NewArtifactLocation().WithUri("README.md")).
 				WithRegion(sarif.NewRegion().WithStartColumn(1).WithStartLine(1).WithEndLine(1).WithEndColumn(1)),

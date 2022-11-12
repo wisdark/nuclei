@@ -101,6 +101,8 @@ requests:
           status:
             - 200
     matchers-condition: and
+    templateid: ""
+    excludematchers: null
     path:
         - '{{BaseURL}}/.git/config'
     method: GET
@@ -132,6 +134,9 @@ dns:
           regex:
             - ec2-[-\d]+\.compute[-\d]*\.amazonaws\.com
             - ec2-[-\d]+\.[\w\d\-]+\.compute[-\d]*\.amazonaws\.com
+          dsl: []
+    templateid: ""
+    excludematchers: null
     name: '{{FQDN}}'
     type: CNAME
     class: inet
@@ -164,8 +169,13 @@ file:
         - type: regex
           regex:
             - amzn\.mws\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
+          dsl: []
+    templateid: ""
+    excludematchers: null
     extensions:
         - all
+    archive: false
+    mimetype: false
 ```
 
 
@@ -199,6 +209,8 @@ network:
         - type: word
           words:
             - zookeeper.version
+    templateid: ""
+    excludematchers: null
 ```
 
 
@@ -311,6 +323,19 @@ Valid values:
 
 
   - <code>AWS</code>
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>variables</code>  <i><a href="#variablesvariable">variables.Variable</a></i>
+
+</div>
+<div class="dt">
+
+Variables contains any variables for the current request.
+
 </div>
 
 <hr />
@@ -572,6 +597,8 @@ Appears in:
 
 - <code><a href="#workflowsworkflowtemplate">workflows.WorkflowTemplate</a>.tags</code>
 
+- <code><a href="#workflowsmatcher">workflows.Matcher</a>.name</code>
+
 
 ```yaml
 <username>
@@ -775,6 +802,8 @@ matchers:
       status:
         - 200
 matchers-condition: and
+templateid: ""
+excludematchers: null
 path:
     - '{{BaseURL}}/.git/config'
 method: GET
@@ -1263,6 +1292,21 @@ This can be used in conjunction with `max-redirects` to control the HTTP request
 
 <div class="dd">
 
+<code>host-redirects</code>  <i>bool</i>
+
+</div>
+<div class="dt">
+
+Redirects specifies whether only redirects to the same host should be followed by the HTTP Client.
+
+This can be used in conjunction with `max-redirects` to control the HTTP request redirects.
+
+</div>
+
+<hr />
+
+<div class="dd">
+
 <code>pipeline</code>  <i>bool</i>
 
 </div>
@@ -1356,6 +1400,32 @@ SkipVariablesCheck skips the check for unresolved variables in request
 <div class="dt">
 
 IterateAll iterates all the values extracted from internal extractors
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>digest-username</code>  <i>string</i>
+
+</div>
+<div class="dt">
+
+DigestAuthUsername specifies the username for digest authentication
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>digest-password</code>  <i>string</i>
+
+</div>
+<div class="dt">
+
+DigestAuthPassword specifies the password for digest authentication
 
 </div>
 
@@ -2110,6 +2180,8 @@ Enum Values:
   - <code>xpath</code>
 
   - <code>json</code>
+
+  - <code>dsl</code>
 </div>
 
 <hr />
@@ -2249,6 +2321,9 @@ extractors:
       regex:
         - ec2-[-\d]+\.compute[-\d]*\.amazonaws\.com
         - ec2-[-\d]+\.[\w\d\-]+\.compute[-\d]*\.amazonaws\.com
+      dsl: []
+templateid: ""
+excludematchers: null
 name: '{{FQDN}}'
 type: CNAME
 class: inet
@@ -2568,8 +2643,13 @@ extractors:
     - type: regex
       regex:
         - amzn\.mws\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
+      dsl: []
+templateid: ""
+excludematchers: null
 extensions:
     - all
+archive: false
+mimetype: false
 ```
 
 Part Definitions: 
@@ -2644,7 +2724,7 @@ Valid values:
 </div>
 <div class="dt">
 
-Extensions is the list of extensions to perform matching on.
+Extensions is the list of extensions or mime types to perform matching on.
 
 
 
@@ -2670,7 +2750,7 @@ extensions:
 </div>
 <div class="dt">
 
-DenyList is the list of file, directories or extensions to deny during matching.
+DenyList is the list of file, directories, mime types or extensions to deny during matching.
 
 By default, it contains some non-interesting extensions that are hardcoded
 in nuclei.
@@ -2707,15 +2787,16 @@ ID is the optional id of the request
 
 <div class="dd">
 
-<code>max-size</code>  <i>int</i>
+<code>max-size</code>  <i>string</i>
 
 </div>
 <div class="dt">
 
 MaxSize is the maximum size of the file to run request on.
 
-By default, nuclei will process 5 MB files and not go more than that.
+By default, nuclei will process 1 GB of content and not go more than that.
 It can be set to much lower or higher depending on use.
+If set to "no" then all content will be processed
 
 
 
@@ -2723,7 +2804,7 @@ Examples:
 
 
 ```yaml
-max-size: 2048
+max-size: 5Mb
 ```
 
 
@@ -2768,6 +2849,8 @@ matchers:
     - type: word
       words:
         - zookeeper.version
+templateid: ""
+excludematchers: null
 ```
 
 Part Definitions: 
@@ -4080,13 +4163,34 @@ Appears in:
 
 <div class="dd">
 
-<code>name</code>  <i>string</i>
+<code>name</code>  <i><a href="#stringslicestringslice">stringslice.StringSlice</a></i>
 
 </div>
 <div class="dt">
 
-Name is the name of the item to match.
+Name is the name of the items to match.
 
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>condition</code>  <i>string</i>
+
+</div>
+<div class="dt">
+
+Condition is the optional condition between names. By default,
+the condition is assumed to be OR.
+
+
+Valid values:
+
+
+  - <code>and</code>
+
+  - <code>or</code>
 </div>
 
 <hr />
@@ -4115,6 +4219,21 @@ Appears in:
 
 
 - <code><a href="#template">Template</a>.signature</code>
+
+
+
+
+
+
+
+## variables.Variable
+Variable is a key-value pair of strings that can be used
+ throughout template.
+
+Appears in:
+
+
+- <code><a href="#template">Template</a>.variables</code>
 
 
 

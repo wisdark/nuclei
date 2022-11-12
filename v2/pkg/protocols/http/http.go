@@ -1,9 +1,11 @@
 package http
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 
+	json "github.com/json-iterator/go"
 	"github.com/pkg/errors"
 
 	"github.com/projectdiscovery/fileutil"
@@ -69,6 +71,7 @@ type Request struct {
 	//   of payloads is provided, or optionally a single file can also
 	//   be provided as payload which will be read on run-time.
 	Payloads map[string]interface{} `yaml:"payloads,omitempty" jsonschema:"title=payloads for the http request,description=Payloads contains any payloads for the current request"`
+
 	// description: |
 	//   Headers contains HTTP Headers to send with the request.
 	// examples:
@@ -117,12 +120,13 @@ type Request struct {
 
 	CompiledOperators *operators.Operators `yaml:"-"`
 
-	options       *protocols.ExecuterOptions
-	totalRequests int
-	customHeaders map[string]string
-	generator     *generators.PayloadGenerator // optional, only enabled when using payloads
-	httpClient    *retryablehttp.Client
-	rawhttpClient *rawhttp.Client
+	options           *protocols.ExecuterOptions
+	connConfiguration *httpclientpool.Configuration
+	totalRequests     int
+	customHeaders     map[string]string
+	generator         *generators.PayloadGenerator // optional, only enabled when using payloads
+	httpClient        *retryablehttp.Client
+	rawhttpClient     *rawhttp.Client
 
 	// description: |
 	//   SelfContained specifies if the request is self-contained.
@@ -147,6 +151,11 @@ type Request struct {
 	//
 	//   This can be used in conjunction with `max-redirects` to control the HTTP request redirects.
 	Redirects bool `yaml:"redirects,omitempty" jsonschema:"title=follow http redirects,description=Specifies whether redirects should be followed by the HTTP Client"`
+	// description: |
+	//   Redirects specifies whether only redirects to the same host should be followed by the HTTP Client.
+	//
+	//   This can be used in conjunction with `max-redirects` to control the HTTP request redirects.
+	HostRedirects bool `yaml:"host-redirects,omitempty" jsonschema:"title=follow same host http redirects,description=Specifies whether redirects to the same host should be followed by the HTTP Client"`
 	// description: |
 	//   Pipeline defines if the attack should be performed with HTTP 1.1 Pipelining
 	//
@@ -177,6 +186,17 @@ type Request struct {
 	// description: |
 	//   IterateAll iterates all the values extracted from internal extractors
 	IterateAll bool `yaml:"iterate-all,omitempty" jsonschema:"title=iterate all the values,description=Iterates all the values extracted from internal extractors"`
+	// description: |
+	//   DigestAuthUsername specifies the username for digest authentication
+	DigestAuthUsername string `yaml:"digest-username,omitempty" jsonschema:"title=specifies the username for digest authentication,description=Optional parameter which specifies the username for digest auth"`
+	// description: |
+	//   DigestAuthPassword specifies the password for digest authentication
+	DigestAuthPassword string `yaml:"digest-password,omitempty" jsonschema:"title=specifies the password for digest authentication,description=Optional parameter which specifies the password for digest auth"`
+}
+
+// Options returns executer options for http request
+func (r *Request) Options() *protocols.ExecuterOptions {
+	return r.options
 }
 
 // RequestPartDefinitions contains a mapping of request part definitions and their
@@ -212,17 +232,33 @@ func (request *Request) isRaw() bool {
 
 // Compile compiles the protocol request for further execution.
 func (request *Request) Compile(options *protocols.ExecuterOptions) error {
-	connectionConfiguration := &httpclientpool.Configuration{
-		Threads:         request.Threads,
-		MaxRedirects:    request.MaxRedirects,
-		FollowRedirects: request.Redirects,
-		CookieReuse:     request.CookieReuse,
+	if err := request.validate(); err != nil {
+		return errors.Wrap(err, "validation error")
 	}
 
-	// if the headers contain "Connection" we need to disable the automatic keep alive of the standard library
-	if _, hasConnectionHeader := request.Headers["Connection"]; hasConnectionHeader {
-		connectionConfiguration.Connection = &httpclientpool.ConnectionConfiguration{DisableKeepAlive: false}
+	connectionConfiguration := &httpclientpool.Configuration{
+		Threads:      request.Threads,
+		MaxRedirects: request.MaxRedirects,
+		NoTimeout:    false,
+		CookieReuse:  request.CookieReuse,
+		Connection:   &httpclientpool.ConnectionConfiguration{DisableKeepAlive: true},
+		RedirectFlow: httpclientpool.DontFollowRedirect,
 	}
+
+	if request.Redirects || options.Options.FollowRedirects {
+		connectionConfiguration.RedirectFlow = httpclientpool.FollowAllRedirect
+	}
+	if request.HostRedirects || options.Options.FollowHostRedirects {
+		connectionConfiguration.RedirectFlow = httpclientpool.FollowSameHostRedirect
+	}
+
+	// If we have request level timeout, ignore http client timeouts
+	for _, req := range request.Raw {
+		if reTimeoutAnnotation.MatchString(req) {
+			connectionConfiguration.NoTimeout = true
+		}
+	}
+	request.connConfiguration = connectionConfiguration
 
 	client, err := httpclientpool.Get(options.Options, connectionConfiguration)
 	if err != nil {
@@ -252,6 +288,8 @@ func (request *Request) Compile(options *protocols.ExecuterOptions) error {
 	}
 	if len(request.Matchers) > 0 || len(request.Extractors) > 0 {
 		compiled := &request.Operators
+		compiled.ExcludeMatchers = options.ExcludeMatchers
+		compiled.TemplateID = options.TemplateID
 		if compileErr := compiled.Compile(); compileErr != nil {
 			return errors.Wrap(compileErr, "could not compile operators")
 		}
@@ -286,6 +324,25 @@ func (request *Request) Compile(options *protocols.ExecuterOptions) error {
 			}
 			request.Payloads[name] = payloadStr
 		}
+	}
+
+	// tries to drop unused payloads - by marshaling sections that might contain the payload
+	unusedPayloads := make(map[string]struct{})
+	requestSectionsToCheck := []interface{}{
+		request.customHeaders, request.Headers, request.Matchers,
+		request.Extractors, request.Body, request.Path, request.Raw,
+	}
+	if requestSectionsToCheckData, err := json.Marshal(requestSectionsToCheck); err == nil {
+		for payload := range request.Payloads {
+			if bytes.Contains(requestSectionsToCheckData, []byte(payload)) {
+				continue
+			}
+			unusedPayloads[payload] = struct{}{}
+		}
+	}
+
+	for payload := range unusedPayloads {
+		delete(request.Payloads, payload)
 	}
 
 	if len(request.Payloads) > 0 {

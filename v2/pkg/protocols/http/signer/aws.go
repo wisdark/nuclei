@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"time"
 
@@ -21,6 +21,8 @@ type AwsSignerArgs struct {
 	AwsId          string
 	AwsSecretToken string
 }
+
+var credentialCreationError = errors.New("couldn't create the credentials structure")
 
 func (awsSignerArgs AwsSignerArgs) Validate() error {
 	if awsSignerArgs.AwsId == "" {
@@ -56,7 +58,7 @@ func NewAwsSigner(args AwsSignerArgs) (*AwsSigner, error) {
 	}
 	creds := credentials.NewStaticCredentials(args.AwsId, args.AwsSecretToken, "")
 	if creds == nil {
-		return nil, errors.New("couldn't create the credentials structure")
+		return nil, credentialCreationError
 	}
 	signer := v4.NewSigner(creds)
 	return &AwsSigner{creds: creds, signer: signer}, nil
@@ -65,7 +67,7 @@ func NewAwsSigner(args AwsSignerArgs) (*AwsSigner, error) {
 func NewAwsSignerFromEnv() (*AwsSigner, error) {
 	creds := credentials.NewEnvCredentials()
 	if creds == nil {
-		return nil, errors.New("couldn't create the credentials structure")
+		return nil, credentialCreationError
 	}
 	signer := v4.NewSigner(creds)
 	return &AwsSigner{creds: creds, signer: signer}, nil
@@ -74,7 +76,7 @@ func NewAwsSignerFromEnv() (*AwsSigner, error) {
 func NewAwsSignerFromFile() (*AwsSigner, error) {
 	creds := credentials.NewSharedCredentials("", "")
 	if creds == nil {
-		return nil, errors.New("couldn't create the credentials structure")
+		return nil, credentialCreationError
 	}
 	signer := v4.NewSigner(creds)
 	return &AwsSigner{creds: creds, signer: signer}, nil
@@ -89,7 +91,7 @@ func (awsSigner *AwsSigner) SignHTTP(request *http.Request, args interface{}) er
 	awsSigner.prepareRequest(request)
 	var body *bytes.Reader
 	if request.Body != nil {
-		bodyBytes, err := ioutil.ReadAll(request.Body)
+		bodyBytes, err := io.ReadAll(request.Body)
 		if err != nil {
 			return err
 		}

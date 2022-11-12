@@ -132,7 +132,8 @@
     },
     "extractors.Extractor": {
       "required": [
-        "type"
+        "type",
+        "DSL"
       ],
       "properties": {
         "name": {
@@ -186,6 +187,12 @@
           "title": "optional attribute to extract from xpath",
           "description": "Optional attribute to extract from response XPath"
         },
+        "DSL": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "part": {
           "type": "string",
           "title": "part of response to extract data from",
@@ -210,7 +217,8 @@
         "regex",
         "kval",
         "xpath",
-        "json"
+        "json",
+        "dsl"
       ],
       "type": "string",
       "title": "type of the extractor",
@@ -344,6 +352,16 @@
       "title": "type of the attack",
       "description": "Type of the attack"
     },
+    "excludematchers.ExcludeMatchers": {
+      "properties": {},
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "variables.Variable": {
+      "properties": {},
+      "additionalProperties": false,
+      "type": "object"
+    },
     "dns.DNSRequestTypeHolder": {
       "enum": [
         "A",
@@ -362,6 +380,10 @@
       "description": "Type is the type of DNS request to make"
     },
     "dns.Request": {
+      "required": [
+        "TemplateID",
+        "ExcludeMatchers"
+      ],
       "properties": {
         "matchers": {
           "items": {
@@ -387,6 +409,12 @@
           "type": "string",
           "title": "condition between the matchers",
           "description": "Conditions between the matchers"
+        },
+        "TemplateID": {
+          "type": "string"
+        },
+        "ExcludeMatchers": {
+          "$ref": "#/definitions/excludematchers.ExcludeMatchers"
         },
         "id": {
           "type": "string",
@@ -450,6 +478,12 @@
       "type": "object"
     },
     "file.Request": {
+      "required": [
+        "TemplateID",
+        "ExcludeMatchers",
+        "Archive",
+        "MimeType"
+      ],
       "properties": {
         "matchers": {
           "items": {
@@ -476,6 +510,12 @@
           "title": "condition between the matchers",
           "description": "Conditions between the matchers"
         },
+        "TemplateID": {
+          "type": "string"
+        },
+        "ExcludeMatchers": {
+          "$ref": "#/definitions/excludematchers.ExcludeMatchers"
+        },
         "extensions": {
           "items": {
             "type": "string"
@@ -498,9 +538,15 @@
           "description": "ID is the optional ID for the request"
         },
         "max-size": {
-          "type": "integer",
+          "type": "string",
           "title": "max size data to run request on",
           "description": "Maximum size of the file to run request on"
+        },
+        "Archive": {
+          "type": "boolean"
+        },
+        "MimeType": {
+          "type": "boolean"
         },
         "no-recursive": {
           "type": "boolean",
@@ -512,6 +558,10 @@
       "type": "object"
     },
     "headless.Request": {
+      "required": [
+        "TemplateID",
+        "ExcludeMatchers"
+      ],
       "properties": {
         "id": {
           "type": "string",
@@ -577,6 +627,12 @@
           "type": "string",
           "title": "condition between the matchers",
           "description": "Conditions between the matchers"
+        },
+        "TemplateID": {
+          "type": "string"
+        },
+        "ExcludeMatchers": {
+          "$ref": "#/definitions/excludematchers.ExcludeMatchers"
         }
       },
       "additionalProperties": false,
@@ -631,7 +687,7 @@
         "waitload",
         "getresource",
         "extract",
-        "set-method",
+        "setmethod",
         "addheader",
         "setheader",
         "deleteheader",
@@ -665,6 +721,10 @@
       "description": "Method is the HTTP Request Method"
     },
     "http.Request": {
+      "required": [
+        "TemplateID",
+        "ExcludeMatchers"
+      ],
       "properties": {
         "matchers": {
           "items": {
@@ -692,6 +752,13 @@
           "type": "string",
           "title": "condition between the matchers",
           "description": "Conditions between the matchers"
+        },
+        "TemplateID": {
+          "type": "string"
+        },
+        "ExcludeMatchers": {
+          "$schema": "http://json-schema.org/draft-04/schema#",
+          "$ref": "#/definitions/excludematchers.ExcludeMatchers"
         },
         "path": {
           "items": {
@@ -806,6 +873,11 @@
           "title": "follow http redirects",
           "description": "Specifies whether redirects should be followed by the HTTP Client"
         },
+        "host-redirects": {
+          "type": "boolean",
+          "title": "follow same host http redirects",
+          "description": "Specifies whether redirects to the same host should be followed by the HTTP Client"
+        },
         "pipeline": {
           "type": "boolean",
           "title": "perform HTTP 1.1 pipelining",
@@ -840,6 +912,16 @@
           "type": "boolean",
           "title": "iterate all the values",
           "description": "Iterates all the values extracted from internal extractors"
+        },
+        "digest-username": {
+          "type": "string",
+          "title": "specifies the username for digest authentication",
+          "description": "Optional parameter which specifies the username for digest auth"
+        },
+        "digest-password": {
+          "type": "string",
+          "title": "specifies the password for digest authentication",
+          "description": "Optional parameter which specifies the password for digest auth"
         }
       },
       "additionalProperties": false,
@@ -890,6 +972,10 @@
       "description": "description=Type of input specified in data field"
     },
     "network.Request": {
+      "required": [
+        "TemplateID",
+        "ExcludeMatchers"
+      ],
       "properties": {
         "id": {
           "type": "string",
@@ -962,12 +1048,22 @@
           "type": "string",
           "title": "condition between the matchers",
           "description": "Conditions between the matchers"
+        },
+        "TemplateID": {
+          "type": "string"
+        },
+        "ExcludeMatchers": {
+          "$ref": "#/definitions/excludematchers.ExcludeMatchers"
         }
       },
       "additionalProperties": false,
       "type": "object"
     },
     "ssl.Request": {
+      "required": [
+        "TemplateID",
+        "ExcludeMatchers"
+      ],
       "properties": {
         "matchers": {
           "items": {
@@ -993,6 +1089,12 @@
           "type": "string",
           "title": "condition between the matchers",
           "description": "Conditions between the matchers"
+        },
+        "TemplateID": {
+          "type": "string"
+        },
+        "ExcludeMatchers": {
+          "$ref": "#/definitions/excludematchers.ExcludeMatchers"
         },
         "address": {
           "type": "string",
@@ -1050,6 +1152,10 @@
       "type": "object"
     },
     "websocket.Request": {
+      "required": [
+        "TemplateID",
+        "ExcludeMatchers"
+      ],
       "properties": {
         "matchers": {
           "items": {
@@ -1075,6 +1181,12 @@
           "type": "string",
           "title": "condition between the matchers",
           "description": "Conditions between the matchers"
+        },
+        "TemplateID": {
+          "type": "string"
+        },
+        "ExcludeMatchers": {
+          "$ref": "#/definitions/excludematchers.ExcludeMatchers"
         },
         "address": {
           "type": "string",
@@ -1120,6 +1232,10 @@
       "type": "object"
     },
     "whois.Request": {
+      "required": [
+        "TemplateID",
+        "ExcludeMatchers"
+      ],
       "properties": {
         "matchers": {
           "items": {
@@ -1145,6 +1261,12 @@
           "type": "string",
           "title": "condition between the matchers",
           "description": "Conditions between the matchers"
+        },
+        "TemplateID": {
+          "type": "string"
+        },
+        "ExcludeMatchers": {
+          "$ref": "#/definitions/excludematchers.ExcludeMatchers"
         },
         "query": {
           "type": "string",
@@ -1276,6 +1398,12 @@
           "$ref": "#/definitions/http.SignatureTypeHolder",
           "title": "signature is the http request signature method",
           "description": "Signature is the HTTP Request signature Method"
+        },
+        "variables": {
+          "$schema": "http://json-schema.org/draft-04/schema#",
+          "$ref": "#/definitions/variables.Variable",
+          "title": "variables for the http request",
+          "description": "Variables contains any variables for the current request"
         }
       },
       "additionalProperties": false,
@@ -1284,9 +1412,18 @@
     "workflows.Matcher": {
       "properties": {
         "name": {
+          "$ref": "#/definitions/stringslice.StringSlice",
+          "title": "name of items to match",
+          "description": "Name of items to match"
+        },
+        "condition": {
+          "enum": [
+            "and",
+            "or"
+          ],
           "type": "string",
-          "title": "name of item to match",
-          "description": "Name of item to match"
+          "title": "condition between names",
+          "description": "Condition between the names"
         },
         "subtemplates": {
           "items": {

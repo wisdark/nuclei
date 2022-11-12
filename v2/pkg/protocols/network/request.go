@@ -3,6 +3,7 @@ package network
 import (
 	"context"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"net"
 	"net/url"
@@ -16,12 +17,14 @@ import (
 	"github.com/projectdiscovery/nuclei/v2/pkg/operators"
 	"github.com/projectdiscovery/nuclei/v2/pkg/output"
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols"
+	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/common/contextargs"
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/common/expressions"
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/common/generators"
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/common/helpers/eventcreator"
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/common/helpers/responsehighlighter"
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/common/interactsh"
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/common/replacer"
+	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/common/utils/vardump"
 	templateTypes "github.com/projectdiscovery/nuclei/v2/pkg/templates/types"
 )
 
@@ -33,26 +36,28 @@ func (request *Request) Type() templateTypes.ProtocolType {
 }
 
 // ExecuteWithResults executes the protocol requests and returns results instead of writing them.
-func (request *Request) ExecuteWithResults(input string, metadata /*TODO review unused parameter*/, previous output.InternalEvent, callback protocols.OutputEventCallback) error {
+func (request *Request) ExecuteWithResults(input *contextargs.Context, metadata /*TODO review unused parameter*/, previous output.InternalEvent, callback protocols.OutputEventCallback) error {
 	var address string
 	var err error
 
 	if request.SelfContained {
 		address = ""
 	} else {
-		address, err = getAddress(input)
+		address, err = getAddress(input.Input)
 	}
 	if err != nil {
-		request.options.Output.Request(request.options.TemplatePath, input, request.Type().String(), err)
+		request.options.Output.Request(request.options.TemplatePath, input.Input, request.Type().String(), err)
 		request.options.Progress.IncrementFailedRequestsBy(1)
 		return errors.Wrap(err, "could not get address from url")
 	}
 
 	for _, kv := range request.addresses {
 		variables := generateNetworkVariables(address)
+		variablesMap := request.options.Variables.Evaluate(generators.MergeMaps(variables, variables))
+		variables = generators.MergeMaps(variablesMap, variables)
 		actualAddress := replacer.Replace(kv.address, variables)
 
-		if err := request.executeAddress(variables, actualAddress, address, input, kv.tls, previous, callback); err != nil {
+		if err := request.executeAddress(variables, actualAddress, address, input.Input, kv.tls, previous, callback); err != nil {
 			gologger.Warning().Msgf("Could not make network request for %s: %s\n", actualAddress, err)
 			continue
 		}
@@ -62,15 +67,15 @@ func (request *Request) ExecuteWithResults(input string, metadata /*TODO review 
 
 // executeAddress executes the request for an address
 func (request *Request) executeAddress(variables map[string]interface{}, actualAddress, address, input string, shouldUseTLS bool, previous output.InternalEvent, callback protocols.OutputEventCallback) error {
+	variables = generators.MergeMaps(variables, map[string]interface{}{"Hostname": address})
+	payloads := generators.BuildPayloadFromOptions(request.options.Options)
+
 	if !strings.Contains(actualAddress, ":") {
 		err := errors.New("no port provided in network protocol request")
 		request.options.Output.Request(request.options.TemplatePath, address, request.Type().String(), err)
 		request.options.Progress.IncrementFailedRequestsBy(1)
 		return err
 	}
-
-	variables = generators.MergeMaps(variables, map[string]interface{}{"Hostname": address})
-	payloads := generators.BuildPayloadFromOptions(request.options.Options)
 
 	if request.generator != nil {
 		iterator := request.generator.NewIterator()
@@ -123,6 +128,12 @@ func (request *Request) executeRequestWithPayloads(variables map[string]interfac
 	responseBuilder := &strings.Builder{}
 	reqBuilder := &strings.Builder{}
 
+	interimValues := generators.MergeMaps(variables, payloads)
+
+	if request.options.Options.Debug || request.options.Options.DebugRequests {
+		gologger.Debug().Msgf("Protocol request variables: \n%s\n", vardump.DumpVariables(interimValues))
+	}
+
 	inputEvents := make(map[string]interface{})
 	for _, input := range request.Inputs {
 		var data []byte
@@ -146,7 +157,7 @@ func (request *Request) executeRequestWithPayloads(variables map[string]interfac
 			data = []byte(transformedData)
 		}
 
-		finalData, dataErr := expressions.EvaluateByte(data, payloads)
+		finalData, dataErr := expressions.EvaluateByte(data, interimValues)
 		if dataErr != nil {
 			request.options.Output.Request(request.options.TemplatePath, address, request.Type().String(), dataErr)
 			request.options.Progress.IncrementFailedRequestsBy(1)
@@ -185,9 +196,15 @@ func (request *Request) executeRequestWithPayloads(variables map[string]interfac
 	}
 	request.options.Progress.IncrementRequests()
 
-	if request.options.Options.Debug || request.options.Options.DebugRequests {
+	if request.options.Options.Debug || request.options.Options.DebugRequests || request.options.Options.StoreResponse {
 		requestBytes := []byte(reqBuilder.String())
-		gologger.Debug().Str("address", actualAddress).Msgf("[%s] Dumped Network request for %s\n%s", request.options.TemplateID, actualAddress, hex.Dump(requestBytes))
+		msg := fmt.Sprintf("[%s] Dumped Network request for %s\n%s", request.options.TemplateID, actualAddress, hex.Dump(requestBytes))
+		if request.options.Options.Debug || request.options.Options.DebugRequests {
+			gologger.Info().Str("address", actualAddress).Msg(msg)
+		}
+		if request.options.Options.StoreResponse {
+			request.options.Output.WriteStoreDebugData(address, request.options.TemplateID, request.Type().String(), msg)
+		}
 		if request.options.Options.VerboseVerbose {
 			gologger.Print().Msgf("\nCompact HEX view:\n%s", hex.EncodeToString(requestBytes))
 		}
@@ -252,7 +269,7 @@ func (request *Request) executeRequestWithPayloads(variables map[string]interfac
 	for k, v := range previous {
 		outputEvent[k] = v
 	}
-	for k, v := range payloads {
+	for k, v := range interimValues {
 		outputEvent[k] = v
 	}
 	for k, v := range inputEvents {
@@ -282,18 +299,23 @@ func (request *Request) executeRequestWithPayloads(variables map[string]interfac
 		event.UsesInteractsh = true
 	}
 
-	dumpResponse(event, request.options, response, actualAddress)
+	dumpResponse(event, request, response, actualAddress, address)
 
 	return nil
 }
 
-func dumpResponse(event *output.InternalWrappedEvent, requestOptions *protocols.ExecuterOptions, response string, actualAddress string) {
-	cliOptions := requestOptions.Options
-	if cliOptions.Debug || cliOptions.DebugResponse {
+func dumpResponse(event *output.InternalWrappedEvent, request *Request, response string, actualAddress, address string) {
+	cliOptions := request.options.Options
+	if cliOptions.Debug || cliOptions.DebugResponse || cliOptions.StoreResponse {
 		requestBytes := []byte(response)
 		highlightedResponse := responsehighlighter.Highlight(event.OperatorsResult, hex.Dump(requestBytes), cliOptions.NoColor, true)
-		gologger.Debug().Msgf("[%s] Dumped Network response for %s\n\n%s", requestOptions.TemplateID, actualAddress, highlightedResponse)
-
+		msg := fmt.Sprintf("[%s] Dumped Network response for %s\n\n", request.options.TemplateID, actualAddress)
+		if cliOptions.Debug || cliOptions.DebugResponse {
+			gologger.Debug().Msg(fmt.Sprintf("%s%s", msg, highlightedResponse))
+		}
+		if cliOptions.StoreResponse {
+			request.options.Output.WriteStoreDebugData(address, request.options.TemplateID, request.Type().String(), fmt.Sprintf("%s%s", msg, hex.Dump(requestBytes)))
+		}
 		if cliOptions.VerboseVerbose {
 			displayCompactHexView(event, response, cliOptions.NoColor)
 		}

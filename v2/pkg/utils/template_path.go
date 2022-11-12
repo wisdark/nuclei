@@ -1,8 +1,10 @@
 package utils
 
 import (
+	"path/filepath"
 	"strings"
 
+	"github.com/mitchellh/go-homedir"
 	"github.com/projectdiscovery/nuclei/v2/pkg/catalog/config"
 )
 
@@ -29,4 +31,13 @@ func TemplatePathURL(fullPath string) (string, string) {
 	finalPath := strings.TrimPrefix(strings.TrimPrefix(fullPath, templateDirectory), "/")
 	templateURL := TemplatesRepoURL + finalPath
 	return finalPath, templateURL
+}
+
+// GetDefaultTemplatePath on default settings
+func GetDefaultTemplatePath() (string, error) {
+	home, err := homedir.Dir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, "nuclei-templates"), nil
 }

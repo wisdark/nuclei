@@ -11,6 +11,7 @@ import (
 	"github.com/projectdiscovery/nuclei/v2/pkg/operators"
 	"github.com/projectdiscovery/nuclei/v2/pkg/output"
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols"
+	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/common/contextargs"
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/common/helpers/writer"
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/http"
 )
@@ -20,6 +21,23 @@ import (
 //
 // If the attributes match, multiple requests can be clustered into a single
 // request which saves time and network resources during execution.
+//
+// The clusterer goes through all the templates, looking for templates with a single
+// HTTP request to an endpoint (multiple requests aren't clustered as of now).
+//
+// All the templates are iterated and any templates with request that is identical
+// to the first individual HTTP request is compared for equality.
+// The equality check is performed as described below -
+//
+// Cases where clustering is not perfomed (request is considered different)
+//   - If request contains payloads,raw,body,unsafe,req-condition,name attributes
+//   - If request methods,max-redirects,cookie-reuse,redirects are not equal
+//   - If request paths aren't identical.
+//   - If request headers aren't identical
+//
+// If multiple requests are identified as identical, they are appended to a slice.
+// Finally, the engine creates a single executer with a clusteredexecuter for all templates
+// in a cluster.
 func Cluster(list map[string]*Template) [][]*Template {
 	final := [][]*Template{}
 
@@ -86,13 +104,16 @@ func ClusterTemplates(templatesList []*Template, options protocols.ExecuterOptio
 	for _, cluster := range clusters {
 		if len(cluster) > 1 {
 			executerOpts := options
-
 			clusterID := fmt.Sprintf("cluster-%s", ClusterID(cluster))
 
+			for _, req := range cluster[0].RequestsHTTP {
+				req.Options().TemplateID = clusterID
+			}
+			executerOpts.TemplateID = clusterID
 			finalTemplatesList = append(finalTemplatesList, &Template{
 				ID:            clusterID,
 				RequestsHTTP:  cluster[0].RequestsHTTP,
-				Executer:      NewExecuter(cluster, &executerOpts),
+				Executer:      NewClusterExecuter(cluster, &executerOpts),
 				TotalRequests: len(cluster[0].RequestsHTTP),
 			})
 			clusterCount += len(cluster)
@@ -103,12 +124,12 @@ func ClusterTemplates(templatesList []*Template, options protocols.ExecuterOptio
 	return finalTemplatesList, clusterCount
 }
 
-// Executer executes a group of requests for a protocol for a clustered
+// ClusterExecuter executes a group of requests for a protocol for a clustered
 // request. It is different from normal executers since the original
 // operators are all combined and post processed after making the request.
 //
 // TODO: We only cluster http requests as of now.
-type Executer struct {
+type ClusterExecuter struct {
 	requests  *http.Request
 	operators []*clusteredOperator
 	options   *protocols.ExecuterOptions
@@ -121,39 +142,45 @@ type clusteredOperator struct {
 	operator     *operators.Operators
 }
 
-var _ protocols.Executer = &Executer{}
+var _ protocols.Executer = &ClusterExecuter{}
 
-// NewExecuter creates a new request executer for list of requests
-func NewExecuter(requests []*Template, options *protocols.ExecuterOptions) *Executer {
-	executer := &Executer{
+// NewClusterExecuter creates a new request executer for list of requests
+func NewClusterExecuter(requests []*Template, options *protocols.ExecuterOptions) *ClusterExecuter {
+	executer := &ClusterExecuter{
 		options:  options,
 		requests: requests[0].RequestsHTTP[0],
 	}
 	for _, req := range requests {
-		executer.operators = append(executer.operators, &clusteredOperator{
-			templateID:   req.ID,
-			templateInfo: req.Info,
-			templatePath: req.Path,
-			operator:     req.RequestsHTTP[0].CompiledOperators,
-		})
+		if req.RequestsHTTP[0].CompiledOperators != nil {
+			operator := req.RequestsHTTP[0].CompiledOperators
+			operator.TemplateID = req.ID
+			operator.ExcludeMatchers = options.ExcludeMatchers
+
+			executer.operators = append(executer.operators, &clusteredOperator{
+				operator:     operator,
+				templateID:   req.ID,
+				templateInfo: req.Info,
+				templatePath: req.Path,
+			})
+		}
 	}
 	return executer
 }
 
 // Compile compiles the execution generators preparing any requests possible.
-func (e *Executer) Compile() error {
+func (e *ClusterExecuter) Compile() error {
 	return e.requests.Compile(e.options)
 }
 
 // Requests returns the total number of requests the rule will perform
-func (e *Executer) Requests() int {
+func (e *ClusterExecuter) Requests() int {
 	var count int
 	count += e.requests.Requests()
 	return count
 }
 
 // Execute executes the protocol group and returns true or false if results were found.
-func (e *Executer) Execute(input string) (bool, error) {
+func (e *ClusterExecuter) Execute(input *contextargs.Context) (bool, error) {
 	var results bool
 
 	previous := make(map[string]interface{})
@@ -180,14 +207,14 @@ func (e *Executer) Execute(input string) (bool, error) {
 			}
 		}
 	})
-	if err != nil && e.options.HostErrorsCache != nil && e.options.HostErrorsCache.CheckError(err) {
-		e.options.HostErrorsCache.MarkFailed(input)
+	if err != nil && e.options.HostErrorsCache != nil {
+		e.options.HostErrorsCache.MarkFailed(input.Input, err)
 	}
 	return results, err
 }
 
 // ExecuteWithResults executes the protocol requests and returns results instead of writing them.
-func (e *Executer) ExecuteWithResults(input string, callback protocols.OutputEventCallback) error {
+func (e *ClusterExecuter) ExecuteWithResults(input *contextargs.Context, callback protocols.OutputEventCallback) error {
 	dynamicValues := make(map[string]interface{})
 	err := e.requests.ExecuteWithResults(input, dynamicValues, nil, func(event *output.InternalWrappedEvent) {
 		for _, operator := range e.operators {
@@ -202,8 +229,8 @@ func (e *Executer) ExecuteWithResults(input string, callback protocols.OutputEve
 			}
 		}
 	})
-	if err != nil && e.options.HostErrorsCache != nil && e.options.HostErrorsCache.CheckError(err) {
-		e.options.HostErrorsCache.MarkFailed(input)
+	if err != nil && e.options.HostErrorsCache != nil {
+		e.options.HostErrorsCache.MarkFailed(input.Input, err)
 	}
 	return err
 }

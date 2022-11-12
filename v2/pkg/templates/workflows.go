@@ -23,7 +23,7 @@ func compileWorkflow(path string, preprocessor Preprocessor, options *protocols.
 func parseWorkflow(preprocessor Preprocessor, workflow *workflows.WorkflowTemplate, options *protocols.ExecuterOptions, loader model.WorkflowLoader) error {
 	shouldNotValidate := false
 
-	if len(workflow.Template) == 0 && workflow.Tags.IsEmpty() {
+	if workflow.Template == "" && workflow.Tags.IsEmpty() {
 		return errors.New("invalid workflow with no templates or tags")
 	}
 	if len(workflow.Subtemplates) > 0 || len(workflow.Matchers) > 0 {
@@ -39,6 +39,11 @@ func parseWorkflow(preprocessor Preprocessor, workflow *workflows.WorkflowTempla
 		}
 	}
 	for _, matcher := range workflow.Matchers {
+		if len(matcher.Name.ToSlice()) > 0 {
+			if err := matcher.Compile(); err != nil {
+				return errors.Wrap(err, "could not compile workflow matcher")
+			}
+		}
 		for _, subtemplates := range matcher.Subtemplates {
 			if err := parseWorkflow(preprocessor, subtemplates, options, loader); err != nil {
 				gologger.Warning().Msgf("Could not parse workflow: %v\n", err)

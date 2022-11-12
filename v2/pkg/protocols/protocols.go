@@ -1,7 +1,7 @@
 package protocols
 
 import (
-	"go.uber.org/ratelimit"
+	"github.com/projectdiscovery/nuclei/v2/pkg/utils/ratelimit"
 
 	"github.com/logrusorgru/aurora"
 
@@ -13,8 +13,11 @@ import (
 	"github.com/projectdiscovery/nuclei/v2/pkg/output"
 	"github.com/projectdiscovery/nuclei/v2/pkg/progress"
 	"github.com/projectdiscovery/nuclei/v2/pkg/projectfile"
+	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/common/contextargs"
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/common/hosterrorscache"
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/common/interactsh"
+	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/common/utils/excludematchers"
+	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/common/variables"
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/headless/engine"
 	"github.com/projectdiscovery/nuclei/v2/pkg/reporting"
 	templateTypes "github.com/projectdiscovery/nuclei/v2/pkg/templates/types"
@@ -28,9 +31,9 @@ type Executer interface {
 	// Requests returns the total number of requests the rule will perform
 	Requests() int
 	// Execute executes the protocol group and returns true or false if results were found.
-	Execute(input string) (bool, error)
+	Execute(input *contextargs.Context) (bool, error)
 	// ExecuteWithResults executes the protocol requests and returns results instead of writing them.
-	ExecuteWithResults(input string, callback OutputEventCallback) error
+	ExecuteWithResults(input *contextargs.Context, callback OutputEventCallback) error
 }
 
 // ExecuterOptions contains the configuration options for executer clients
@@ -50,9 +53,9 @@ type ExecuterOptions struct {
 	// Progress is a progress client for scan reporting
 	Progress progress.Progress
 	// RateLimiter is a rate-limiter for limiting sent number of requests.
-	RateLimiter ratelimit.Limiter
+	RateLimiter *ratelimit.Limiter
 	// Catalog is a template catalog implementation for nuclei
-	Catalog *catalog.Catalog
+	Catalog catalog.Catalog
 	// ProjectFile is the project file for nuclei
 	ProjectFile *projectfile.ProjectFile
 	// Browser is a browser engine for running headless templates
@@ -60,9 +63,13 @@ type ExecuterOptions struct {
 	// Interactsh is a client for interactsh oob polling server
 	Interactsh *interactsh.Client
 	// HostErrorsCache is an optional cache for handling host errors
-	HostErrorsCache *hosterrorscache.Cache
+	HostErrorsCache hosterrorscache.CacheInterface
 	// Stop execution once first match is found
 	StopAtFirstMatch bool
+	// Variables is a list of variables from template
+	Variables variables.Variable
+	// ExcludeMatchers is the list of matchers to exclude
+	ExcludeMatchers *excludematchers.ExcludeMatchers
 
 	Operators []*operators.Operators // only used by offlinehttp module
 
@@ -94,7 +101,7 @@ type Request interface {
 	// Extract performs extracting operation for an extractor on model and returns true or false.
 	Extract(data map[string]interface{}, matcher *extractors.Extractor) map[string]struct{}
 	// ExecuteWithResults executes the protocol requests and returns results instead of writing them.
-	ExecuteWithResults(input string, dynamicValues, previous output.InternalEvent, callback OutputEventCallback) error
+	ExecuteWithResults(input *contextargs.Context, dynamicValues, previous output.InternalEvent, callback OutputEventCallback) error
 	// MakeResultEventItem creates a result event from internal wrapped event. Intended to be used by MakeResultEventItem internally
 	MakeResultEventItem(wrapped *output.InternalWrappedEvent) *output.ResultEvent
 	// MakeResultEvent creates a flat list of result events from an internal wrapped event, based on successful matchers and extracted data
@@ -144,7 +151,7 @@ func MakeDefaultExtractFunc(data map[string]interface{}, extractor *extractors.E
 	}
 
 	item, ok := data[part]
-	if !ok && extractor.Type.ExtractorType != extractors.KValExtractor {
+	if !ok && !extractors.SupportsMap(extractor) {
 		return nil
 	}
 	itemStr := types.ToString(item)
@@ -157,7 +164,9 @@ func MakeDefaultExtractFunc(data map[string]interface{}, extractor *extractors.E
 	case extractors.JSONExtractor:
 		return extractor.ExtractJSON(itemStr)
 	case extractors.XPathExtractor:
-		return extractor.ExtractHTML(itemStr)
+		return extractor.ExtractXPath(itemStr)
+	case extractors.DSLExtractor:
+		return extractor.ExtractDSL(data)
 	}
 	return nil
 }

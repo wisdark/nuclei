@@ -1,7 +1,7 @@
 package offlinehttp
 
 import (
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httputil"
 	"os"
@@ -13,6 +13,7 @@ import (
 	"github.com/projectdiscovery/gologger"
 	"github.com/projectdiscovery/nuclei/v2/pkg/output"
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols"
+	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/common/contextargs"
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/common/helpers/eventcreator"
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/common/tostring"
 	templateTypes "github.com/projectdiscovery/nuclei/v2/pkg/templates/types"
@@ -28,10 +29,10 @@ func (request *Request) Type() templateTypes.ProtocolType {
 }
 
 // ExecuteWithResults executes the protocol requests and returns results instead of writing them.
-func (request *Request) ExecuteWithResults(input string, metadata /*TODO review unused parameter*/, previous output.InternalEvent, callback protocols.OutputEventCallback) error {
+func (request *Request) ExecuteWithResults(input *contextargs.Context, metadata /*TODO review unused parameter*/, previous output.InternalEvent, callback protocols.OutputEventCallback) error {
 	wg := sizedwaitgroup.New(request.options.Options.BulkSize)
 
-	err := request.getInputPaths(input, func(data string) {
+	err := request.getInputPaths(input.Input, func(data string) {
 		wg.Add()
 
 		go func(data string) {
@@ -54,7 +55,7 @@ func (request *Request) ExecuteWithResults(input string, metadata /*TODO review 
 				return
 			}
 
-			buffer, err := ioutil.ReadAll(file)
+			buffer, err := io.ReadAll(file)
 			if err != nil {
 				gologger.Error().Msgf("Could not read file path %s: %s\n", data, err)
 				return
@@ -79,7 +80,7 @@ func (request *Request) ExecuteWithResults(input string, metadata /*TODO review 
 				return
 			}
 
-			body, err := ioutil.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
 			if err != nil {
 				gologger.Error().Msgf("Could not read raw http response body %s: %s\n", data, err)
 				return
@@ -97,7 +98,7 @@ func (request *Request) ExecuteWithResults(input string, metadata /*TODO review 
 	})
 	wg.Wait()
 	if err != nil {
-		request.options.Output.Request(request.options.TemplatePath, input, "file", err)
+		request.options.Output.Request(request.options.TemplatePath, input.Input, "file", err)
 		request.options.Progress.IncrementFailedRequestsBy(1)
 		return errors.Wrap(err, "could not send file request")
 	}

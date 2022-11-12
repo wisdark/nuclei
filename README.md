@@ -30,7 +30,8 @@
 
 <p align="center">
   <a href="https://github.com/projectdiscovery/nuclei/blob/master/README.md">English</a> •
-  <a href="https://github.com/projectdiscovery/nuclei/blob/master/README_CN.md">中文</a>
+  <a href="https://github.com/projectdiscovery/nuclei/blob/master/README_CN.md">中文</a> •
+  <a href="https://github.com/projectdiscovery/nuclei/blob/master/README_KR.md">Korean</a>
 </p>
 
 ---
@@ -51,7 +52,7 @@ We have a [dedicated repository](https://github.com/projectdiscovery/nuclei-temp
 
 # Install Nuclei
 
-Nuclei requires **go1.17** to install successfully. Run the following command to install the latest version -
+Nuclei requires **go1.18** to install successfully. Run the following command to install the latest version -
 
 ```sh
 go install -v github.com/projectdiscovery/nuclei/v2/cmd/nuclei@latest
@@ -84,7 +85,7 @@ nuclei -h
 This will display help for the tool. Here are all the switches it supports.
 
 
-```yaml
+```console
 Nuclei is a fast, template based vulnerability scanner focusing
 on extensive configurability, massive extensibility and ease of use.
 
@@ -98,30 +99,37 @@ TARGET:
    -resume string        Resume scan using resume.cfg (clustering will be disabled)
 
 TEMPLATES:
-   -nt, -new-templates          run only new templates added in latest nuclei-templates release
-   -t, -templates string[]      list of template or template directory to run (comma-separated, file)
-   -tu, -template-url string[]  list of template urls to run (comma-separated, file)
-   -w, -workflows string[]      list of workflow or workflow directory to run (comma-separated, file)
-   -wu, -workflow-url string[]  list of workflow urls to run (comma-separated, file)
-   -validate                    validate the passed templates to nuclei
-   -tl                          list all available templates
+   -nt, -new-templates                    run only new templates added in latest nuclei-templates release
+   -ntv, -new-templates-version string[]  run new templates added in specific version
+   -as, -automatic-scan                   automatic web scan using wappalyzer technology detection to tags mapping
+   -t, -templates string[]                list of template or template directory to run (comma-separated, file)
+   -tu, -template-url string[]            list of template urls to run (comma-separated, file)
+   -w, -workflows string[]                list of workflow or workflow directory to run (comma-separated, file)
+   -wu, -workflow-url string[]            list of workflow urls to run (comma-separated, file)
+   -validate                              validate the passed templates to nuclei
+   -nss, -no-strict-syntax                Disable strict syntax check on templates
+   -tl                                    list all available templates
 
 FILTERING:
-   -a, -author string[]              templates to run based on authors (comma-separated, file)
-   -tags string[]                    templates to run based on tags (comma-separated, file)
-   -etags, -exclude-tags string[]    templates to exclude based on tags (comma-separated, file)
-   -itags, -include-tags string[]    tags to be executed even if they are excluded either by default or configuration
-   -id, -template-id string[]        templates to run based on template ids (comma-separated, file)
-   -eid, -exclude-id string[]        templates to exclude based on template ids (comma-separated, file)
-   -it, -include-templates string[]  templates to be executed even if they are excluded either by default or configuration
-   -et, -exclude-templates string[]  template or template directory to exclude (comma-separated, file)
-   -s, -severity value[]             templates to run based on severity. Possible values: info, low, medium, high, critical, unknown
-   -es, -exclude-severity value[]    templates to exclude based on severity. Possible values: info, low, medium, high, critical, unknown
-   -pt, -type value[]                templates to run based on protocol type. Possible values: dns, file, http, headless, network, workflow, ssl, websocket, whois
-   -ept, -exclude-type value[]       templates to exclude based on protocol type. Possible values: dns, file, http, headless, network, workflow, ssl, websocket, whois
+   -a, -author string[]               templates to run based on authors (comma-separated, file)
+   -tags string[]                     templates to run based on tags (comma-separated, file)
+   -etags, -exclude-tags string[]     templates to exclude based on tags (comma-separated, file)
+   -itags, -include-tags string[]     tags to be executed even if they are excluded either by default or configuration
+   -id, -template-id string[]         templates to run based on template ids (comma-separated, file)
+   -eid, -exclude-id string[]         templates to exclude based on template ids (comma-separated, file)
+   -it, -include-templates string[]   templates to be executed even if they are excluded either by default or configuration
+   -et, -exclude-templates string[]   template or template directory to exclude (comma-separated, file)
+   -em, -exclude-matchers string[]    template matchers to exclude in result
+   -s, -severity value[]              templates to run based on severity. Possible values: info, low, medium, high, critical, unknown
+   -es, -exclude-severity value[]     templates to exclude based on severity. Possible values: info, low, medium, high, critical, unknown
+   -pt, -type value[]                 templates to run based on protocol type. Possible values: dns, file, http, headless, network, workflow, ssl, websocket, whois
+   -ept, -exclude-type value[]        templates to exclude based on protocol type. Possible values: dns, file, http, headless, network, workflow, ssl, websocket, whois
+   -tc, -template-condition string[]  templates to run based on expression condition
 
 OUTPUT:
    -o, -output string            output file to write found issues/vulnerabilities
+   -sresp, -store-resp           store all request/response passed through nuclei to output directory
+   -srd, -store-resp-dir string  store all request/response passed through nuclei to custom directory (default "output")
    -silent                       display findings only
    -nc, -no-color                disable output content coloring (ANSI escape codes)
    -json                         write output in JSONL(ines) format
@@ -134,18 +142,29 @@ OUTPUT:
    -se, -sarif-export string     file to export results in SARIF format
 
 CONFIGURATIONS:
-   -config string              path to the nuclei configuration file
-   -rc, -report-config string  nuclei reporting module configuration file
-   -H, -header string[]        custom headers in header:value format
-   -V, -var value              custom vars in var=value format
-   -r, -resolvers string       file containing resolver list for nuclei
-   -sr, -system-resolvers      use system DNS resolving as error fallback
-   -passive                    enable passive HTTP response processing mode
-   -ev, -env-vars              enable environment variables to be used in template
-   -cc, -client-cert string    client certificate file (PEM-encoded) used for authenticating against scanned hosts
-   -ck, -client-key string     client key file (PEM-encoded) used for authenticating against scanned hosts
-   -ca, -client-ca string      client certificate authority file (PEM-encoded) used for authenticating against scanned hosts
-   -ztls                       Use ztls library with autofallback to standard one for tls13
+   -config string                 path to the nuclei configuration file
+   -fr, -follow-redirects         enable following redirects for http templates
+   -fhr, -follow-host-redirects   follow redirects on the same host
+   -mr, -max-redirects int        max number of redirects to follow for http templates (default 10)
+   -dr, -disable-redirects        disable redirects for http templates
+   -rc, -report-config string     nuclei reporting module configuration file
+   -H, -header string[]           custom header/cookie to include in all http request in header:value format (cli, file)
+   -V, -var value                 custom vars in key=value format
+   -r, -resolvers string          file containing resolver list for nuclei
+   -sr, -system-resolvers         use system DNS resolving as error fallback
+   -passive                       enable passive HTTP response processing mode
+   -ev, -env-vars                 enable environment variables to be used in template
+   -cc, -client-cert string       client certificate file (PEM-encoded) used for authenticating against scanned hosts
+   -ck, -client-key string        client key file (PEM-encoded) used for authenticating against scanned hosts
+   -ca, -client-ca string         client certificate authority file (PEM-encoded) used for authenticating against scanned hosts
+   -sml, -show-match-line         show match lines for file templates, works with extractors only
+   -ztls                          use ztls library with autofallback to standard one for tls13
+   -sni string                    tls sni hostname to use (default: input domain name)
+   -i, -interface string          network interface to use for network scan
+   -sip, -source-ip string        source ip address to use for network scan
+   -config-directory string       Override the default config path ($home/.config)
+   -rsr, -response-size-read int  max response size to read in bytes (default 10485760)
+   -rss, -response-size-save int  max response size to read in bytes (default 1048576)
 
 INTERACTSH:
    -iserver, -interactsh-server string  interactsh server url for self-hosted instance (default: oast.pro,oast.live,oast.site,oast.online,oast.fun,oast.me)
@@ -157,40 +176,49 @@ INTERACTSH:
    -ni, -no-interactsh                  disable interactsh server for OAST testing, exclude OAST based templates
 
 RATE-LIMIT:
-   -rl, -rate-limit int            maximum number of requests to send per second (default 150)
-   -rlm, -rate-limit-minute int    maximum number of requests to send per minute
-   -bs, -bulk-size int             maximum number of hosts to be analyzed in parallel per template (default 25)
-   -c, -concurrency int            maximum number of templates to be executed in parallel (default 25)
-   -hbs, -headless-bulk-size int   maximum number of headless hosts to be analyzed in parallel per template (default 10)
-   -hc, -headless-concurrency int  maximum number of headless templates to be executed in parallel (default 10)
+   -rl, -rate-limit int               maximum number of requests to send per second (default 150)
+   -rlm, -rate-limit-minute int       maximum number of requests to send per minute
+   -bs, -bulk-size int                maximum number of hosts to be analyzed in parallel per template (default 25)
+   -c, -concurrency int               maximum number of templates to be executed in parallel (default 25)
+   -hbs, -headless-bulk-size int      maximum number of headless hosts to be analyzed in parallel per template (default 10)
+   -headc, -headless-concurrency int  maximum number of headless templates to be executed in parallel (default 10)
 
 OPTIMIZATIONS:
-   -timeout int                time to wait in seconds before timeout (default 5)
-   -retries int                number of times to retry a failed request (default 1)
-   -ldp, -leave-default-ports  leave default HTTP/HTTPS ports (eg. host:80,host:443
-   -mhe, -max-host-error int   max errors for a host before skipping from scan (default 30)
-   -project                    use a project folder to avoid sending same request multiple times
-   -project-path string        set a specific project path
-   -spm, -stop-at-first-path   stop processing HTTP requests after the first match (may break template/workflow logic)
-   -stream                     stream mode - start elaborating without sorting the input
+   -timeout int                        time to wait in seconds before timeout (default 10)
+   -retries int                        number of times to retry a failed request (default 1)
+   -ldp, -leave-default-ports          leave default HTTP/HTTPS ports (eg. host:80,host:443
+   -mhe, -max-host-error int           max errors for a host before skipping from scan (default 30)
+   -project                            use a project folder to avoid sending same request multiple times
+   -project-path string                set a specific project path
+   -spm, -stop-at-first-path           stop processing HTTP requests after the first match (may break template/workflow logic)
+   -stream                             stream mode - start elaborating without sorting the input
+   -irt, -input-read-timeout duration  timeout on input read (default 3m0s)
+   -no-stdin                           Disable Stdin processing
 
 HEADLESS:
-   -headless            enable templates that require headless browser support (root user on linux will disable sandbox)
-   -page-timeout int    seconds to wait for each page in headless mode (default 20)
-   -sb, -show-browser   show the browser on the screen when running templates with headless mode
-   -sc, -system-chrome  Use local installed chrome browser instead of nuclei installed
+   -headless                    enable templates that require headless browser support (root user on linux will disable sandbox)
+   -page-timeout int            seconds to wait for each page in headless mode (default 20)
+   -sb, -show-browser           show the browser on the screen when running templates with headless mode
+   -sc, -system-chrome          Use local installed chrome browser instead of nuclei installed
+   -lha, -list-headless-action  list available headless actions
 
 DEBUG:
    -debug                    show all requests and responses
-   -debug-req                show all sent requests
-   -debug-resp               show all received responses
-   -p, -proxy string[]       List of HTTP(s)/SOCKS5 proxy to use (comma separated or file input)
+   -dreq, -debug-req         show all sent requests
+   -dresp, -debug-resp       show all received responses
+   -p, -proxy string[]       list of http/socks5 proxy to use (comma separated or file input)
+   -pi, -proxy-internal      proxy all internal requests
+   -ldf, -list-dsl-function  list all supported DSL function signatures
    -tlog, -trace-log string  file to write sent requests trace log
    -elog, -error-log string  file to write sent requests error log
    -version                  show nuclei version
+   -hm, -hang-monitor        enable nuclei hang monitoring
    -v, -verbose              show verbose output
+   -profile-mem string       optional nuclei memory profile dump file
    -vv                       display templates loaded for scan
+   -ep, -enable-pprof        enable pprof debugging server
    -tv, -templates-version   shows the version of the installed nuclei-templates
+   -hc, -health-check        run diagnostic check up
 
 UPDATE:
    -update                        update nuclei engine to the latest released version
@@ -299,15 +327,17 @@ We have [a discussion thread around this](https://github.com/projectdiscovery/nu
 
 ### Resources
 
-
-- [Scanning Live Web Applications with Nuclei in CI/CD Pipeline](https://blog.escape.tech/devsecops-part-iii-scanning-live-web-applications/) by [@TristanKalos](https://twitter.com/TristanKalos)
+- [Finding bugs with Nuclei with PinkDraconian (Robbe Van Roey)](https://www.youtube.com/watch?v=ewP0xVPW-Pk) by **[@PinkDraconian](https://twitter.com/PinkDraconian)** 
+- [Nuclei: Packing a Punch with Vulnerability Scanning](https://bishopfox.com/blog/nuclei-vulnerability-scan) by **Bishopfox**
+- [The WAF efficacy framework](https://www.fastly.com/blog/the-waf-efficacy-framework-measuring-the-effectiveness-of-your-waf) by **Fastly**
+- [Scanning Live Web Applications with Nuclei in CI/CD Pipeline](https://blog.escape.tech/devsecops-part-iii-scanning-live-web-applications/) by **[@TristanKalos](https://twitter.com/TristanKalos)**
 - [Community Powered Scanning with Nuclei](https://blog.projectdiscovery.io/community-powered-scanning-with-nuclei/)
 - [Nuclei Unleashed - Quickly write complex exploits](https://blog.projectdiscovery.io/nuclei-unleashed-quickly-write-complex-exploits/)
 - [Nuclei - Fuzz all the things](https://blog.projectdiscovery.io/nuclei-fuzz-all-the-things/)
 - [Nuclei + Interactsh Integration for Automating OOB Testing](https://blog.projectdiscovery.io/nuclei-interactsh-integration/)
-- [Weaponizes nuclei Workflows to Pwn All the Things](https://medium.com/@dwisiswant0/weaponizes-nuclei-workflows-to-pwn-all-the-things-cd01223feb77) by [@dwisiswant0](https://github.com/dwisiswant0)
-- [How to Scan Continuously with Nuclei?](https://medium.com/@dwisiswant0/how-to-scan-continuously-with-nuclei-fcb7e9d8b8b9) by [@dwisiswant0](https://github.com/dwisiswant0)
-- [Hack with Automation !!!](https://dhiyaneshgeek.github.io/web/security/2021/07/19/hack-with-automation/) by [@DhiyaneshGeek](https://github.com/DhiyaneshGeek)
+- [Weaponizes nuclei Workflows to Pwn All the Things](https://medium.com/@dwisiswant0/weaponizes-nuclei-workflows-to-pwn-all-the-things-cd01223feb77) by **[@dwisiswant0](https://github.com/dwisiswant0)**
+- [How to Scan Continuously with Nuclei?](https://medium.com/@dwisiswant0/how-to-scan-continuously-with-nuclei-fcb7e9d8b8b9) by **[@dwisiswant0](https://github.com/dwisiswant0)**
+- [Hack with Automation !!!](https://dhiyaneshgeek.github.io/web/security/2021/07/19/hack-with-automation/) by **[@DhiyaneshGeek](https://github.com/DhiyaneshGeek)**
 
 ### Credits
 

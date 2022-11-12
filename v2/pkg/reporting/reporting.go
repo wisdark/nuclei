@@ -1,11 +1,16 @@
 package reporting
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/pkg/errors"
 	"go.uber.org/multierr"
+	"gopkg.in/yaml.v2"
 
+	"github.com/projectdiscovery/fileutil"
+	"github.com/projectdiscovery/nuclei/v2/pkg/catalog/config"
 	"github.com/projectdiscovery/nuclei/v2/pkg/model/types/severity"
 	"github.com/projectdiscovery/nuclei/v2/pkg/model/types/stringslice"
 	"github.com/projectdiscovery/nuclei/v2/pkg/output"
@@ -16,6 +21,7 @@ import (
 	"github.com/projectdiscovery/nuclei/v2/pkg/reporting/trackers/github"
 	"github.com/projectdiscovery/nuclei/v2/pkg/reporting/trackers/gitlab"
 	"github.com/projectdiscovery/nuclei/v2/pkg/reporting/trackers/jira"
+	"github.com/projectdiscovery/retryablehttp-go"
 )
 
 // Options is a configuration file for nuclei reporting module
@@ -36,6 +42,8 @@ type Options struct {
 	SarifExporter *sarif.Options `yaml:"sarif"`
 	// ElasticsearchExporter contains configuration options for Elasticsearch Exporter Module
 	ElasticsearchExporter *es.Options `yaml:"elasticsearch"`
+
+	HttpClient *retryablehttp.Client `yaml:"-"`
 }
 
 // Filter filters the received event and decides whether to perform
@@ -44,6 +52,11 @@ type Filter struct {
 	Severities severity.Severities     `yaml:"severity"`
 	Tags       stringslice.StringSlice `yaml:"tags"`
 }
+
+const (
+	reportingClientCreationErrorMessage = "could not create reporting client"
+	exportClientCreationErrorMessage    = "could not create exporting client"
+)
 
 // GetMatch returns true if a filter matches result event
 func (filter *Filter) GetMatch(event *output.ResultEvent) bool {
@@ -107,45 +120,50 @@ type Client struct {
 // New creates a new nuclei issue tracker reporting client
 func New(options *Options, db string) (*Client, error) {
 	client := &Client{options: options}
+
 	if options.GitHub != nil {
+		options.GitHub.HttpClient = options.HttpClient
 		tracker, err := github.New(options.GitHub)
 		if err != nil {
-			return nil, errors.Wrap(err, "could not create reporting client")
+			return nil, errors.Wrap(err, reportingClientCreationErrorMessage)
 		}
 		client.trackers = append(client.trackers, tracker)
 	}
 	if options.GitLab != nil {
+		options.GitLab.HttpClient = options.HttpClient
 		tracker, err := gitlab.New(options.GitLab)
 		if err != nil {
-			return nil, errors.Wrap(err, "could not create reporting client")
+			return nil, errors.Wrap(err, reportingClientCreationErrorMessage)
 		}
 		client.trackers = append(client.trackers, tracker)
 	}
 	if options.Jira != nil {
+		options.Jira.HttpClient = options.HttpClient
 		tracker, err := jira.New(options.Jira)
 		if err != nil {
-			return nil, errors.Wrap(err, "could not create reporting client")
+			return nil, errors.Wrap(err, reportingClientCreationErrorMessage)
 		}
 		client.trackers = append(client.trackers, tracker)
 	}
 	if options.MarkdownExporter != nil {
 		exporter, err := markdown.New(options.MarkdownExporter)
 		if err != nil {
-			return nil, errors.Wrap(err, "could not create exporting client")
+			return nil, errors.Wrap(err, exportClientCreationErrorMessage)
 		}
 		client.exporters = append(client.exporters, exporter)
 	}
 	if options.SarifExporter != nil {
 		exporter, err := sarif.New(options.SarifExporter)
 		if err != nil {
-			return nil, errors.Wrap(err, "could not create exporting client")
+			return nil, errors.Wrap(err, exportClientCreationErrorMessage)
 		}
 		client.exporters = append(client.exporters, exporter)
 	}
 	if options.ElasticsearchExporter != nil {
+		options.ElasticsearchExporter.HttpClient = options.HttpClient
 		exporter, err := es.New(options.ElasticsearchExporter)
 		if err != nil {
-			return nil, errors.Wrap(err, "could not create exporting client")
+			return nil, errors.Wrap(err, exportClientCreationErrorMessage)
 		}
 		client.exporters = append(client.exporters, exporter)
 	}
@@ -156,6 +174,39 @@ func New(options *Options, db string) (*Client, error) {
 	}
 	client.dedupe = storage
 	return client, nil
+}
+
+// CreateConfigIfNotExists creates report-config if it doesn't exists
+func CreateConfigIfNotExists() error {
+	config, err := config.GetConfigDir()
+	if err != nil {
+		return errors.Wrap(err, "could not get config directory")
+	}
+	reportingConfig := filepath.Join(config, "report-config.yaml")
+
+	if fileutil.FileExists(reportingConfig) {
+		return nil
+	}
+	values := stringslice.StringSlice{Value: []string{}}
+
+	options := &Options{
+		AllowList:             &Filter{Tags: values},
+		DenyList:              &Filter{Tags: values},
+		GitHub:                &github.Options{},
+		GitLab:                &gitlab.Options{},
+		Jira:                  &jira.Options{},
+		MarkdownExporter:      &markdown.Options{},
+		SarifExporter:         &sarif.Options{},
+		ElasticsearchExporter: &es.Options{},
+	}
+	reportingFile, err := os.Create(reportingConfig)
+	if err != nil {
+		return errors.Wrap(err, "could not create config file")
+	}
+	defer reportingFile.Close()
+
+	err = yaml.NewEncoder(reportingFile).Encode(options)
+	return err
 }
 
 // RegisterTracker registers a custom tracker to the reporter

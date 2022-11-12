@@ -4,9 +4,15 @@ import (
 	"errors"
 	"regexp"
 	"strings"
+
+	"github.com/Knetic/govaluate"
+	"github.com/projectdiscovery/nuclei/v2/pkg/operators/common/dsl"
 )
 
-var unresolvedVariablesRegex = regexp.MustCompile(`(?:%7[B|b]|\{){2}([^}]+)(?:%7[D|d]|\}){2}["'\)\}]*`)
+var (
+	numericalExpressionRegex = regexp.MustCompile(`^[0-9+\-/\W]+$`)
+	unresolvedVariablesRegex = regexp.MustCompile(`(?:%7[B|b]|\{){2}([^}]+)(?:%7[D|d]|\}){2}["'\)\}]*`)
+)
 
 // ContainsUnresolvedVariables returns an error with variable names if the passed
 // input contains unresolved {{<pattern-here>}} variables.
@@ -19,6 +25,14 @@ func ContainsUnresolvedVariables(items ...string) error {
 		var unresolvedVariables []string
 		for _, match := range matches {
 			if len(match) < 2 {
+				continue
+			}
+			// Skip if the match is an expression
+			if numericalExpressionRegex.MatchString(match[1]) {
+				continue
+			}
+			// or if it contains only literals (can be solved from expression engine)
+			if hasLiteralsOnly(match[1]) {
 				continue
 			}
 			unresolvedVariables = append(unresolvedVariables, match[1])
@@ -45,6 +59,14 @@ func ContainsVariablesWithNames(names map[string]interface{}, items ...string) e
 				continue
 			}
 			matchName := match[1]
+			// Skip if the match is an expression
+			if numericalExpressionRegex.MatchString(matchName) {
+				continue
+			}
+			// or if it contains only literals (can be solved from expression engine)
+			if hasLiteralsOnly(match[1]) {
+				continue
+			}
 			if _, ok := names[matchName]; !ok {
 				unresolvedVariables = append(unresolvedVariables, matchName)
 			}
@@ -71,6 +93,14 @@ func ContainsVariablesWithIgnoreList(skipNames map[string]interface{}, items ...
 				continue
 			}
 			matchName := match[1]
+			// Skip if the match is an expression
+			if numericalExpressionRegex.MatchString(matchName) {
+				continue
+			}
+			// or if it contains only literals (can be solved from expression engine)
+			if hasLiteralsOnly(match[1]) {
+				continue
+			}
 			if _, ok := skipNames[matchName]; ok {
 				continue
 			}
@@ -83,4 +113,13 @@ func ContainsVariablesWithIgnoreList(skipNames map[string]interface{}, items ...
 	}
 
 	return nil
+}
+
+func hasLiteralsOnly(data string) bool {
+	expr, err := govaluate.NewEvaluableExpressionWithFunctions(data, dsl.HelperFunctions)
+	if err == nil && expr != nil {
+		_, err = expr.Evaluate(nil)
+		return err == nil
+	}
+	return true
 }

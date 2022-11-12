@@ -1,8 +1,6 @@
 package file
 
 import (
-	"bufio"
-	"strings"
 	"time"
 
 	"github.com/projectdiscovery/nuclei/v2/pkg/model"
@@ -39,7 +37,7 @@ func (request *Request) Match(data map[string]interface{}, matcher *matchers.Mat
 // Extract performs extracting operation for an extractor on model and returns true or false.
 func (request *Request) Extract(data map[string]interface{}, extractor *extractors.Extractor) map[string]struct{} {
 	itemStr, ok := request.getMatchPart(extractor.Part, data)
-	if !ok && extractor.Type.ExtractorType != extractors.KValExtractor {
+	if !ok && !extractors.SupportsMap(extractor) {
 		return nil
 	}
 
@@ -48,6 +46,8 @@ func (request *Request) Extract(data map[string]interface{}, extractor *extracto
 		return extractor.ExtractRegex(itemStr)
 	case extractors.KValExtractor:
 		return extractor.ExtractKval(data)
+	case extractors.DSLExtractor:
+		return extractor.ExtractDSL(data)
 	}
 	return nil
 }
@@ -67,7 +67,7 @@ func (request *Request) getMatchPart(part string, data output.InternalEvent) (st
 	return itemStr, true
 }
 
-// responseToDSLMap converts a file response to a map for use in DSL matching
+// responseToDSLMap converts a file chunk elaboration to a map for use in DSL matching
 func (request *Request) responseToDSLMap(raw, inputFilePath, matchedFileName string) output.InternalEvent {
 	return output.InternalEvent{
 		"path":          inputFilePath,
@@ -81,62 +81,17 @@ func (request *Request) responseToDSLMap(raw, inputFilePath, matchedFileName str
 }
 
 // MakeResultEvent creates a result event from internal wrapped event
+// Deprecated: unused in stream mode, must be present for interface compatibility
 func (request *Request) MakeResultEvent(wrapped *output.InternalWrappedEvent) []*output.ResultEvent {
-	results := protocols.MakeDefaultResultEvent(request, wrapped)
-
-	raw, ok := wrapped.InternalEvent["raw"]
-	if !ok {
-		return results
-	}
-
-	rawStr, ok := raw.(string)
-	if !ok {
-		return results
-	}
-
-	for _, result := range results {
-		lineWords := make(map[string]struct{})
-
-		if wrapped.OperatorsResult != nil {
-			for _, value := range wrapped.OperatorsResult.Matches {
-				for _, v := range value {
-					lineWords[v] = struct{}{}
-				}
-			}
-		}
-		if len(result.ExtractedResults) > 0 {
-			for _, v := range result.ExtractedResults {
-				lineWords[v] = struct{}{}
-			}
-		}
-		result.LineCount = calculateLineFunc(rawStr, lineWords)
-	}
-
-	// Identify the position of match in file using a dirty hack.
-	for _, result := range results {
-		for _, extraction := range result.ExtractedResults {
-			scanner := bufio.NewScanner(strings.NewReader(rawStr))
-
-			line := 1
-			for scanner.Scan() {
-				if strings.Contains(scanner.Text(), extraction) {
-					if result.FileToIndexPosition == nil {
-						result.FileToIndexPosition = make(map[string]int)
-					}
-					result.FileToIndexPosition[result.Matched] = line
-					continue
-				}
-				line++
-			}
-		}
-	}
-	return results
+	return protocols.MakeDefaultResultEvent(request, wrapped)
 }
 
 func (request *Request) GetCompiledOperators() []*operators.Operators {
 	return []*operators.Operators{request.CompiledOperators}
 }
 
+// MakeResultEventItem
+// Deprecated: unused in stream mode, must be present for interface compatibility
 func (request *Request) MakeResultEventItem(wrapped *output.InternalWrappedEvent) *output.ResultEvent {
 	data := &output.ResultEvent{
 		MatcherStatus:    true,

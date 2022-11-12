@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"compress/zlib"
+	"context"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/httputil"
 	"strings"
@@ -63,7 +63,7 @@ func dumpResponseWithRedirectChain(resp *http.Response, body []byte) ([]redirect
 			break
 		}
 		if redirectResp.Body != nil {
-			body, _ = ioutil.ReadAll(redirectResp.Body)
+			body, _ = io.ReadAll(redirectResp.Body)
 		}
 		respObj := redirectedResponse{
 			headers:      respData,
@@ -115,31 +115,29 @@ func normalizeResponseBody(resp *http.Response, response *redirectedResponse) er
 // dump creates a dump of the http request in form of a byte slice
 func dump(req *generatedRequest, reqURL string) ([]byte, error) {
 	if req.request != nil {
+		cloned := req.request.Clone(context.Background())
+
 		// Create a copy on the fly of the request body - ignore errors
 		bodyBytes, _ := req.request.BodyBytes()
+		var dumpBody bool
 		if len(bodyBytes) > 0 {
-			req.request.Request.ContentLength = int64(len(bodyBytes))
-			req.request.Request.Body = ioutil.NopCloser(bytes.NewReader(bodyBytes))
+			dumpBody = true
+			cloned.ContentLength = int64(len(bodyBytes))
+			cloned.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 		} else {
-			req.request.Request.ContentLength = 0
-			req.request.Request.Body = nil
+			cloned.ContentLength = 0
+			cloned.Body = nil
+			delete(cloned.Header, "Content-length")
 		}
 
-		dumpBytes, err := httputil.DumpRequestOut(req.request.Request, true)
+		dumpBytes, err := httputil.DumpRequestOut(cloned, dumpBody)
 		if err != nil {
 			return nil, err
 		}
-
-		// The original req.Body gets modified indirectly by httputil.DumpRequestOut so we set it again to nil if it was empty
-		// Otherwise redirects like 307/308 would fail (as they require the body to be sent along)
-		if len(bodyBytes) == 0 {
-			req.request.Request.ContentLength = 0
-			req.request.Request.Body = nil
-		}
-
 		return dumpBytes, nil
 	}
-	return rawhttp.DumpRequestRaw(req.rawRequest.Method, reqURL, req.rawRequest.Path, generators.ExpandMapValues(req.rawRequest.Headers), ioutil.NopCloser(strings.NewReader(req.rawRequest.Data)), rawhttp.Options{CustomHeaders: req.rawRequest.UnsafeHeaders, CustomRawBytes: req.rawRequest.UnsafeRawBytes})
+	rawHttpOptions := &rawhttp.Options{CustomHeaders: req.rawRequest.UnsafeHeaders, CustomRawBytes: req.rawRequest.UnsafeRawBytes}
+	return rawhttp.DumpRequestRaw(req.rawRequest.Method, reqURL, req.rawRequest.Path, generators.ExpandMapValues(req.rawRequest.Headers), io.NopCloser(strings.NewReader(req.rawRequest.Data)), rawHttpOptions)
 }
 
 // handleDecompression if the user specified a custom encoding (as golang transport doesn't do this automatically)
@@ -162,7 +160,7 @@ func handleDecompression(resp *http.Response, bodyOrig []byte) (bodyDec []byte, 
 	}
 	defer reader.Close()
 
-	bodyDec, err = ioutil.ReadAll(reader)
+	bodyDec, err = io.ReadAll(reader)
 	if err != nil {
 		return bodyOrig, err
 	}
@@ -173,7 +171,7 @@ func handleDecompression(resp *http.Response, bodyOrig []byte) (bodyDec []byte, 
 func decodeGBK(s []byte) ([]byte, error) {
 	I := bytes.NewReader(s)
 	O := transform.NewReader(I, simplifiedchinese.GBK.NewDecoder())
-	d, e := ioutil.ReadAll(O)
+	d, e := io.ReadAll(O)
 	if e != nil {
 		return nil, e
 	}

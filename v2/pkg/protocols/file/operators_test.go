@@ -21,7 +21,7 @@ func TestResponseToDSLMap(t *testing.T) {
 	templateID := "testing-file"
 	request := &Request{
 		ID:          templateID,
-		MaxSize:     1024,
+		MaxSize:     "1Gb",
 		NoRecursive: false,
 		Extensions:  []string{"*", ".lock"},
 		DenyList:    []string{".go"},
@@ -46,7 +46,7 @@ func TestFileOperatorMatch(t *testing.T) {
 	templateID := "testing-file"
 	request := &Request{
 		ID:          templateID,
-		MaxSize:     1024,
+		MaxSize:     "1Gb",
 		NoRecursive: false,
 		Extensions:  []string{"*", ".lock"},
 		DenyList:    []string{".go"},
@@ -134,7 +134,7 @@ func TestFileOperatorExtract(t *testing.T) {
 	templateID := "testing-file"
 	request := &Request{
 		ID:          templateID,
-		MaxSize:     1024,
+		MaxSize:     "1Gb",
 		NoRecursive: false,
 		Extensions:  []string{"*", ".lock"},
 		DenyList:    []string{".go"},
@@ -239,9 +239,13 @@ func testFileMakeResult(t *testing.T, matchers []*matchers.Matcher, matcherCondi
 
 	testutils.Init(options)
 	templateID := "testing-file"
+	executerOpts := testutils.NewMockExecuterOptions(options, &testutils.TemplateInfo{
+		ID:   templateID,
+		Info: model.Info{SeverityHolder: severity.Holder{Severity: severity.Low}, Name: "test"},
+	})
 	request := &Request{
 		ID:          templateID,
-		MaxSize:     1024,
+		MaxSize:     "1Gb",
 		NoRecursive: false,
 		Extensions:  []string{"*", ".lock"},
 		DenyList:    []string{".go"},
@@ -254,11 +258,8 @@ func testFileMakeResult(t *testing.T, matchers []*matchers.Matcher, matcherCondi
 				Regex: []string{"[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+"},
 			}},
 		},
+		options: executerOpts,
 	}
-	executerOpts := testutils.NewMockExecuterOptions(options, &testutils.TemplateInfo{
-		ID:   templateID,
-		Info: model.Info{SeverityHolder: severity.Holder{Severity: severity.Low}, Name: "test"},
-	})
 	err := request.Compile(executerOpts)
 	require.Nil(t, err, "could not compile file request")
 

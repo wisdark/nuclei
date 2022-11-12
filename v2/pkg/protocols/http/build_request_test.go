@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"net/url"
 	"testing"
 	"time"
@@ -27,7 +28,7 @@ func TestBaseURLWithTemplatePrefs(t *testing.T) {
 func TestVariables(t *testing.T) {
 	baseURL := "http://localhost:9001/test/123"
 	parsed, _ := url.Parse(baseURL)
-	values := generateVariables(parsed, true)
+	values := GenerateVariables(parsed, true)
 
 	require.Equal(t, values["BaseURL"], parsed.String(), "incorrect baseurl")
 	require.Equal(t, values["RootURL"], "http://localhost:9001", "incorrect rootURL")
@@ -40,7 +41,7 @@ func TestVariables(t *testing.T) {
 
 	baseURL = "https://example.com"
 	parsed, _ = url.Parse(baseURL)
-	values = generateVariables(parsed, false)
+	values = GenerateVariables(parsed, false)
 
 	require.Equal(t, values["BaseURL"], parsed.String(), "incorrect baseurl")
 	require.Equal(t, values["Host"], "example.com", "incorrect domain name")
@@ -52,7 +53,7 @@ func TestVariables(t *testing.T) {
 
 	baseURL = "ftp://foobar.com/"
 	parsed, _ = url.Parse(baseURL)
-	values = generateVariables(parsed, true)
+	values = GenerateVariables(parsed, true)
 
 	require.Equal(t, values["BaseURL"], parsed.String(), "incorrect baseurl")
 	require.Equal(t, values["Host"], "foobar.com", "incorrect domain name")
@@ -88,7 +89,7 @@ func TestMakeRequestFromModal(t *testing.T) {
 
 	generator := request.newGenerator()
 	inputData, payloads, _ := generator.nextValue()
-	req, err := generator.Make("https://example.com", inputData, payloads, map[string]interface{}{})
+	req, err := generator.Make(context.Background(), "https://example.com", inputData, payloads, map[string]interface{}{})
 	require.Nil(t, err, "could not make http request")
 
 	bodyBytes, _ := req.request.BodyBytes()
@@ -116,13 +117,13 @@ func TestMakeRequestFromModalTrimSuffixSlash(t *testing.T) {
 
 	generator := request.newGenerator()
 	inputData, payloads, _ := generator.nextValue()
-	req, err := generator.Make("https://example.com/test.php", inputData, payloads, map[string]interface{}{})
+	req, err := generator.Make(context.Background(), "https://example.com/test.php", inputData, payloads, map[string]interface{}{})
 	require.Nil(t, err, "could not make http request")
 	require.Equal(t, "https://example.com/test.php?query=example", req.request.URL.String(), "could not get correct request path")
 
 	generator = request.newGenerator()
 	inputData, payloads, _ = generator.nextValue()
-	req, err = generator.Make("https://example.com/test/", inputData, payloads, map[string]interface{}{})
+	req, err = generator.Make(context.Background(), "https://example.com/test/", inputData, payloads, map[string]interface{}{})
 	require.Nil(t, err, "could not make http request")
 	require.Equal(t, "https://example.com/test/?query=example", req.request.URL.String(), "could not get correct request path")
 }
@@ -156,13 +157,13 @@ Accept-Encoding: gzip`},
 
 	generator := request.newGenerator()
 	inputData, payloads, _ := generator.nextValue()
-	req, err := generator.Make("https://example.com", inputData, payloads, map[string]interface{}{})
+	req, err := generator.Make(context.Background(), "https://example.com", inputData, payloads, map[string]interface{}{})
 	require.Nil(t, err, "could not make http request")
 	authorization := req.request.Header.Get("Authorization")
 	require.Equal(t, "Basic admin:admin", authorization, "could not get correct authorization headers from raw")
 
 	inputData, payloads, _ = generator.nextValue()
-	req, err = generator.Make("https://example.com", inputData, payloads, map[string]interface{}{})
+	req, err = generator.Make(context.Background(), "https://example.com", inputData, payloads, map[string]interface{}{})
 	require.Nil(t, err, "could not make http request")
 	authorization = req.request.Header.Get("Authorization")
 	require.Equal(t, "Basic admin:guest", authorization, "could not get correct authorization headers from raw")
@@ -197,13 +198,13 @@ Accept-Encoding: gzip`},
 
 	generator := request.newGenerator()
 	inputData, payloads, _ := generator.nextValue()
-	req, err := generator.Make("https://example.com", inputData, payloads, map[string]interface{}{})
+	req, err := generator.Make(context.Background(), "https://example.com", inputData, payloads, map[string]interface{}{})
 	require.Nil(t, err, "could not make http request")
 	authorization := req.request.Header.Get("Authorization")
 	require.Equal(t, "Basic YWRtaW46YWRtaW4=", authorization, "could not get correct authorization headers from raw")
 
 	inputData, payloads, _ = generator.nextValue()
-	req, err = generator.Make("https://example.com", inputData, payloads, map[string]interface{}{})
+	req, err = generator.Make(context.Background(), "https://example.com", inputData, payloads, map[string]interface{}{})
 	require.Nil(t, err, "could not make http request")
 	authorization = req.request.Header.Get("Authorization")
 	require.Equal(t, "Basic YWRtaW46Z3Vlc3Q=", authorization, "could not get correct authorization headers from raw")
@@ -234,14 +235,14 @@ func TestMakeRequestFromModelUniqueInteractsh(t *testing.T) {
 		ServerURL:           options.InteractshURL,
 		CacheSize:           int64(options.InteractionsCacheSize),
 		Eviction:            time.Duration(options.InteractionsEviction) * time.Second,
-		ColldownPeriod:      time.Duration(options.InteractionsCoolDownPeriod) * time.Second,
+		CooldownPeriod:      time.Duration(options.InteractionsCoolDownPeriod) * time.Second,
 		PollDuration:        time.Duration(options.InteractionsPollDuration) * time.Second,
 		DisableHttpFallback: true,
 	})
 	require.Nil(t, err, "could not create interactsh client")
 
 	inputData, payloads, _ := generator.nextValue()
-	got, err := generator.Make("https://example.com", inputData, payloads, map[string]interface{}{})
+	got, err := generator.Make(context.Background(), "https://example.com", inputData, payloads, map[string]interface{}{})
 	require.Nil(t, err, "could not make http request")
 
 	// check if all the interactsh markers are replaced with unique urls

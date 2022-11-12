@@ -2,13 +2,13 @@ package markdown
 
 import (
 	"bytes"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/projectdiscovery/nuclei/v2/pkg/output"
 	"github.com/projectdiscovery/nuclei/v2/pkg/reporting/format"
+	"github.com/projectdiscovery/stringsutil"
 )
 
 type Exporter struct {
@@ -66,7 +66,7 @@ func (exporter *Exporter) Export(event *output.ResultEvent) error {
 	dataBuilder.WriteString(description)
 	data := dataBuilder.Bytes()
 
-	return ioutil.WriteFile(filepath.Join(exporter.directory, finalFilename), data, 0644)
+	return os.WriteFile(filepath.Join(exporter.directory, finalFilename), data, 0644)
 }
 
 // Close closes the exporter after operation
@@ -78,5 +78,5 @@ func sanitizeFilename(filename string) string {
 	if len(filename) > 256 {
 		filename = filename[0:255]
 	}
-	return filename
+	return stringsutil.ReplaceAny(filename, "_", "?", "/", ">", "|", ":", ";", "*", "<", "\"", "'", " ")
 }

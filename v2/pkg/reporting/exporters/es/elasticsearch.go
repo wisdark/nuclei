@@ -6,7 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"time"
 
@@ -14,14 +14,17 @@ import (
 
 	"github.com/projectdiscovery/nuclei/v2/pkg/output"
 	"github.com/projectdiscovery/nuclei/v2/pkg/protocols/common/protocolstate"
+	"github.com/projectdiscovery/retryablehttp-go"
 )
 
 // Options contains necessary options required for elasticsearch communication
 type Options struct {
+	// Host is the hostname of the elasticsearch instance
+	Host string `yaml:"host" validate:"required_without=IP"`
 	// IP for elasticsearch instance
-	IP string `yaml:"ip"  validate:"required,ip"`
+	IP string `yaml:"ip" validate:"required,ip"`
 	// Port is the port of elasticsearch instance
-	Port int `yaml:"port"  validate:"required,gte=0,lte=65535"`
+	Port int `yaml:"port" validate:"gte=0,lte=65535"`
 	// SSL (optional) enables ssl for elasticsearch connection
 	SSL bool `yaml:"ssl"`
 	// SSLVerification (optional) disables SSL verification for elasticsearch
@@ -32,6 +35,8 @@ type Options struct {
 	Password string `yaml:"password"  validate:"required"`
 	// IndexName is the name of the elasticsearch index
 	IndexName string `yaml:"index-name"  validate:"required"`
+
+	HttpClient *retryablehttp.Client `yaml:"-"`
 }
 
 type data struct {
@@ -50,15 +55,22 @@ type Exporter struct {
 func New(option *Options) (*Exporter, error) {
 	var ei *Exporter
 
-	client := &http.Client{
-		Timeout: 5 * time.Second,
-		Transport: &http.Transport{
-			MaxIdleConns:        10,
-			MaxIdleConnsPerHost: 10,
-			DialContext:         protocolstate.Dialer.Dial,
-			TLSClientConfig:     &tls.Config{InsecureSkipVerify: option.SSLVerification},
-		},
+	var client *http.Client
+	if option.HttpClient != nil {
+		client = option.HttpClient.HTTPClient
+	} else {
+		client = &http.Client{
+			Timeout: 5 * time.Second,
+			Transport: &http.Transport{
+				MaxIdleConns:        10,
+				MaxIdleConnsPerHost: 10,
+				DialContext:         protocolstate.Dialer.Dial,
+				DialTLSContext:      protocolstate.Dialer.DialTLS,
+				TLSClientConfig:     &tls.Config{InsecureSkipVerify: option.SSLVerification},
+			},
+		}
 	}
+
 	// preparing url for elasticsearch
 	scheme := "http://"
 	if option.SSL {
@@ -71,7 +83,16 @@ func New(option *Options) (*Exporter, error) {
 		auth = "Basic " + auth
 		authentication = auth
 	}
-	url := fmt.Sprintf("%s%s:%d/%s/_doc", scheme, option.IP, option.Port, option.IndexName)
+	var addr string
+	if option.Host != "" {
+		addr = option.Host
+	} else {
+		addr = option.IP
+	}
+	if option.Port != 0 {
+		addr += fmt.Sprintf(":%d", option.Port)
+	}
+	url := fmt.Sprintf("%s%s/%s/_doc", scheme, addr, option.IndexName)
 
 	ei = &Exporter{
 		url:            url,
@@ -101,14 +122,14 @@ func (exporter *Exporter) Export(event *output.ResultEvent) error {
 	if err != nil {
 		return err
 	}
-	req.Body = ioutil.NopCloser(bytes.NewReader(b))
+	req.Body = io.NopCloser(bytes.NewReader(b))
 
 	res, err := exporter.elasticsearch.Do(req)
 	if err != nil {
 		return err
 	}
 
-	b, err = ioutil.ReadAll(res.Body)
+	b, err = io.ReadAll(res.Body)
 	if err != nil {
 		return errors.New(err.Error() + "error thrown by elasticsearch " + string(b))
 	}

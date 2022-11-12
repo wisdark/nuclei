@@ -13,12 +13,12 @@ jobs:
         os: [ubuntu-latest, windows-latest, macOS-latest]
     steps:
       - name: Set up Go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v3
         with:
-          go-version: 1.17
+          go-version: 1.18
 
       - name: Check out code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Build
         run: go build .
@@ -31,10 +31,13 @@ jobs:
       - name: Integration Tests
         env:
           GH_ACTION: true
-        run: bash run.sh
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+        run: |
+          chmod +x run.sh
+          bash run.sh ${{ matrix.os }}
         working-directory: integration_tests/
 
-      # At the bottom for known issue on OSX - https://github.com/projectdiscovery/nuclei/issues/1309
       - name: Race Condition Tests
-        run: go build -race .
+        if: ${{ matrix.os != 'windows-latest' }} # known issue: https://github.com/golang/go/issues/46099
+        run: go run -race . -u scanme.sh
         working-directory: v2/cmd/nuclei/
