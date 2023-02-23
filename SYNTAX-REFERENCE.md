@@ -101,8 +101,6 @@ requests:
           status:
             - 200
     matchers-condition: and
-    templateid: ""
-    excludematchers: null
     path:
         - '{{BaseURL}}/.git/config'
     method: GET
@@ -134,9 +132,6 @@ dns:
           regex:
             - ec2-[-\d]+\.compute[-\d]*\.amazonaws\.com
             - ec2-[-\d]+\.[\w\d\-]+\.compute[-\d]*\.amazonaws\.com
-          dsl: []
-    templateid: ""
-    excludematchers: null
     name: '{{FQDN}}'
     type: CNAME
     class: inet
@@ -169,9 +164,6 @@ file:
         - type: regex
           regex:
             - amzn\.mws\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
-          dsl: []
-    templateid: ""
-    excludematchers: null
     extensions:
         - all
     archive: false
@@ -209,8 +201,6 @@ network:
         - type: word
           words:
             - zookeeper.version
-    templateid: ""
-    excludematchers: null
 ```
 
 
@@ -802,8 +792,6 @@ matchers:
       status:
         - 200
 matchers-condition: and
-templateid: ""
-excludematchers: null
 path:
     - '{{BaseURL}}/.git/config'
 method: GET
@@ -1224,6 +1212,19 @@ Examples:
 max-size: 2048
 ```
 
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>fuzzing</code>  <i>[]<a href="#fuzzrule">fuzz.Rule</a></i>
+
+</div>
+<div class="dt">
+
+Fuzzing describes schema to fuzz http requests
 
 </div>
 
@@ -2080,6 +2081,19 @@ attribute: href
 
 <div class="dd">
 
+<code>dsl</code>  <i>[]string</i>
+
+</div>
+<div class="dt">
+
+Extracts using DSL expressions.
+
+</div>
+
+<hr />
+
+<div class="dd">
+
 <code>part</code>  <i>string</i>
 
 </div>
@@ -2265,7 +2279,7 @@ Enum Values:
 
   - <code>GET</code>
 
-  - <code>GET</code>
+  - <code>HEAD</code>
 
   - <code>POST</code>
 
@@ -2284,6 +2298,197 @@ Enum Values:
   - <code>PURGE</code>
 
   - <code>Debug</code>
+</div>
+
+<hr />
+
+
+
+
+
+## fuzz.Rule
+Rule is a single rule which describes how to fuzz the request
+
+Appears in:
+
+
+- <code><a href="#httprequest">http.Request</a>.fuzzing</code>
+
+
+
+
+
+<hr />
+
+<div class="dd">
+
+<code>type</code>  <i>string</i>
+
+</div>
+<div class="dt">
+
+Type is the type of fuzzing rule to perform.
+
+replace replaces the values entirely. prefix prefixes the value. postfix postfixes the value
+and infix places between the values.
+
+
+Valid values:
+
+
+  - <code>replace</code>
+
+  - <code>prefix</code>
+
+  - <code>postfix</code>
+
+  - <code>infix</code>
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>part</code>  <i>string</i>
+
+</div>
+<div class="dt">
+
+Part is the part of request to fuzz.
+
+query fuzzes the query part of url. More parts will be added later.
+
+
+Valid values:
+
+
+  - <code>query</code>
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>mode</code>  <i>string</i>
+
+</div>
+<div class="dt">
+
+Mode is the mode of fuzzing to perform.
+
+single fuzzes one value at a time. multiple fuzzes all values at same time.
+
+
+Valid values:
+
+
+  - <code>single</code>
+
+  - <code>multiple</code>
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>keys</code>  <i>[]string</i>
+
+</div>
+<div class="dt">
+
+Keys is the optional list of key named parameters to fuzz.
+
+
+
+Examples:
+
+
+```yaml
+# Examples of keys
+keys:
+    - url
+    - file
+    - host
+```
+
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>keys-regex</code>  <i>[]string</i>
+
+</div>
+<div class="dt">
+
+KeysRegex is the optional list of regex key parameters to fuzz.
+
+
+
+Examples:
+
+
+```yaml
+# Examples of key regex
+keys-regex:
+    - url.*
+```
+
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>values</code>  <i>[]string</i>
+
+</div>
+<div class="dt">
+
+Values is the optional list of regex value parameters to fuzz.
+
+
+
+Examples:
+
+
+```yaml
+# Examples of value regex
+values:
+    - https?://.*
+```
+
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>fuzz</code>  <i>[]string</i>
+
+</div>
+<div class="dt">
+
+Fuzz is the list of payloads to perform substitutions with.
+
+
+
+Examples:
+
+
+```yaml
+# Examples of fuzz
+fuzz:
+    - '{{ssrf}}'
+    - '{{interactsh-url}}'
+    - example-value
+```
+
+
 </div>
 
 <hr />
@@ -2321,9 +2526,6 @@ extractors:
       regex:
         - ec2-[-\d]+\.compute[-\d]*\.amazonaws\.com
         - ec2-[-\d]+\.[\w\d\-]+\.compute[-\d]*\.amazonaws\.com
-      dsl: []
-templateid: ""
-excludematchers: null
 name: '{{FQDN}}'
 type: CNAME
 class: inet
@@ -2621,6 +2823,8 @@ Enum Values:
   - <code>AAAA</code>
 
   - <code>CAA</code>
+
+  - <code>TLSA</code>
 </div>
 
 <hr />
@@ -2643,9 +2847,6 @@ extractors:
     - type: regex
       regex:
         - amzn\.mws\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
-      dsl: []
-templateid: ""
-excludematchers: null
 extensions:
     - all
 archive: false
@@ -2849,8 +3050,6 @@ matchers:
     - type: word
       words:
         - zookeeper.version
-templateid: ""
-excludematchers: null
 ```
 
 Part Definitions: 
@@ -3331,6 +3530,19 @@ description: |
 
 <div class="dd">
 
+<code>stop-at-first-match</code>  <i>bool</i>
+
+</div>
+<div class="dt">
+
+StopAtFirstMatch stops the execution of the requests and template as soon as a match is found.
+
+</div>
+
+<hr />
+
+<div class="dd">
+
 <code>matchers</code>  <i>[]<a href="#matchersmatcher">matchers.Matcher</a></i>
 
 </div>
@@ -3732,6 +3944,28 @@ Valid values:
 
 Client Cipher Suites  - auto if not specified.
 
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>scan_mode</code>  <i>string</i>
+
+</div>
+<div class="dt">
+
+Tls Scan Mode - auto if not specified
+
+
+Valid values:
+
+
+  - <code>ctls</code>
+
+  - <code>ztls</code>
+
+  - <code>auto</code>
 </div>
 
 <hr />

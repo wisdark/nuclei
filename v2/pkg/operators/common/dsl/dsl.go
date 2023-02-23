@@ -14,6 +14,7 @@ import (
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"hash"
 	"html"
@@ -32,6 +33,7 @@ import (
 	"github.com/Knetic/govaluate"
 	"github.com/asaskevich/govalidator"
 	"github.com/hashicorp/go-version"
+	"github.com/kataras/jwt"
 	"github.com/logrusorgru/aurora"
 	"github.com/spaolacci/murmur3"
 
@@ -62,7 +64,7 @@ var functionSignaturePattern = regexp.MustCompile(`(\w+)\s*\((?:([\w\d,\s]+)\s+(
 var dateFormatRegex = regexp.MustCompile("%([A-Za-z])")
 
 type dslFunction struct {
-	signature   string
+	signatures  []string
 	expressFunc govaluate.ExpressionFunction
 }
 
@@ -88,8 +90,10 @@ func init() {
 		"to_lower": makeDslFunction(1, func(args ...interface{}) (interface{}, error) {
 			return strings.ToLower(types.ToString(args[0])), nil
 		}),
-		"sort": makeDslWithOptionalArgsFunction(
-			"(args ...interface{}) interface{}",
+		"sort": makeMultiSignatureDslFunction([]string{
+			"(input string) string",
+			"(input number) string",
+			"(elements ...interface{}) []interface{}"},
 			func(args ...interface{}) (interface{}, error) {
 				argCount := len(args)
 				if argCount == 0 {
@@ -110,8 +114,10 @@ func init() {
 				}
 			},
 		),
-		"uniq": makeDslWithOptionalArgsFunction(
-			"(args ...interface{}) interface{}",
+		"uniq": makeMultiSignatureDslFunction([]string{
+			"(input string) string",
+			"(input number) string",
+			"(elements ...interface{}) []interface{}"},
 			func(args ...interface{}) (interface{}, error) {
 				argCount := len(args)
 				if argCount == 0 {
@@ -410,12 +416,40 @@ func init() {
 				return builder.String(), nil
 			},
 		),
-		"join": makeDslWithOptionalArgsFunction(
+		"split": makeMultiSignatureDslFunction([]string{
+			"(input string, n int) []string",
+			"(input string, separator string, optionalChunkSize) []string"},
+			func(arguments ...interface{}) (interface{}, error) {
+				argumentsSize := len(arguments)
+				if argumentsSize == 2 {
+					input := types.ToString(arguments[0])
+					separatorOrCount := types.ToString(arguments[1])
+
+					count, err := strconv.Atoi(separatorOrCount)
+					if err != nil {
+						return strings.SplitN(input, separatorOrCount, -1), nil
+					}
+					return toChunks(input, count), nil
+				} else if argumentsSize == 3 {
+					input := types.ToString(arguments[0])
+					separator := types.ToString(arguments[1])
+					count, err := strconv.Atoi(types.ToString(arguments[2]))
+					if err != nil {
+						return nil, invalidDslFunctionError
+					}
+					return strings.SplitN(input, separator, count), nil
+				} else {
+					return nil, invalidDslFunctionError
+				}
+			},
+		),
+		"join": makeMultiSignatureDslFunction([]string{
 			"(separator string, elements ...interface{}) string",
+			"(separator string, elements []interface{}) string"},
 			func(arguments ...interface{}) (interface{}, error) {
 				argumentsSize := len(arguments)
 				if argumentsSize < 2 {
-					return nil, errors.New("incorrect number of arguments received")
+					return nil, invalidDslFunctionError
 				} else if argumentsSize == 2 {
 					separator := types.ToString(arguments[0])
 					elements, ok := arguments[1].([]string)
@@ -431,7 +465,6 @@ func init() {
 
 					stringElements := make([]string, 0, argumentsSize)
 					for _, element := range elements {
-
 						if _, ok := element.([]string); ok {
 							return nil, errors.New("cannot use join on more than one slice element")
 						}
@@ -627,9 +660,7 @@ func init() {
 							return parsedTime.Unix(), nil
 						}
 					}
-					errorMessage := "could not parse the current input with the default layouts"
-					gologger.Debug().Msg(errorMessage + ":\n" + strings.Join(defaultDateTimeLayouts, "\t\n"))
-					return nil, fmt.Errorf(errorMessage)
+					return nil, fmt.Errorf("could not parse the current input with the default layouts")
 				} else if len(args) == 2 {
 					layout := types.ToString(args[1])
 					parsedTime, err := time.Parse(layout, input)
@@ -742,22 +773,14 @@ func init() {
 				return argStr[start:end], nil
 			},
 		),
-		"aes_cbc": makeDslFunction(2, func(args ...interface{}) (interface{}, error) {
-			key := []byte(types.ToString(args[0]))
-			cleartext := []byte(types.ToString(args[1]))
-			block, _ := aes.NewCipher(key)
-			blockSize := block.BlockSize()
-			n := blockSize - len(cleartext)%blockSize
-			temp := bytes.Repeat([]byte{byte(n)}, n)
-			cleartext = append(cleartext, temp...)
-			iv := make([]byte, 16)
-			if _, err := crand.Read(iv); err != nil {
-				return nil, err
-			}
-			blockMode := cipher.NewCBCEncrypter(block, iv)
-			ciphertext := make([]byte, len(cleartext))
-			blockMode.CryptBlocks(ciphertext, cleartext)
-			ciphertext = append(iv, ciphertext...)
+		"aes_cbc": makeDslFunction(3, func(args ...interface{}) (interface{}, error) {
+			bKey := []byte(args[1].(string))
+			bIV := []byte(args[2].(string))
+			bPlaintext := pkcs5padding([]byte(args[0].(string)), aes.BlockSize, len(args[0].(string)))
+			block, _ := aes.NewCipher(bKey)
+			ciphertext := make([]byte, len(bPlaintext))
+			mode := cipher.NewCBCEncrypter(block, bIV)
+			mode.CryptBlocks(ciphertext, bPlaintext)
 			return ciphertext, nil
 		}),
 		"aes_gcm": makeDslFunction(2, func(args ...interface{}) (interface{}, error) {
@@ -780,6 +803,118 @@ func init() {
 			data := gcm.Seal(nonce, nonce, []byte(value), nil)
 			return data, nil
 		}),
+		"generate_jwt": makeDslWithOptionalArgsFunction(
+			"(jsonString, optionalAlgorithm, optionalSignature string, optionalMaxAgeUnix interface{}) string",
+			func(args ...interface{}) (interface{}, error) {
+				var optionalAlgorithm string
+				var optionalSignature []byte
+				var optionalMaxAgeUnix time.Time
+
+				var signOpts []jwt.SignOption
+				var jsonData jwt.Map
+
+				argSize := len(args)
+
+				if argSize < 1 || argSize > 4 {
+					return nil, invalidDslFunctionError
+				}
+				jsonString := args[0].(string)
+
+				err := json.Unmarshal([]byte(jsonString), &jsonData)
+				if err != nil {
+					return nil, err
+				}
+
+				var algorithm jwt.Alg
+
+				if argSize > 1 {
+					alg := args[1].(string)
+					optionalAlgorithm = strings.ToUpper(alg)
+
+					switch optionalAlgorithm {
+					case "":
+						algorithm = jwt.NONE
+					case "HS256":
+						algorithm = jwt.HS256
+					case "HS384":
+						algorithm = jwt.HS384
+					case "HS512":
+						algorithm = jwt.HS512
+					case "RS256":
+						algorithm = jwt.RS256
+					case "RS384":
+						algorithm = jwt.RS384
+					case "RS512":
+						algorithm = jwt.RS512
+					case "PS256":
+						algorithm = jwt.PS256
+					case "PS384":
+						algorithm = jwt.PS384
+					case "PS512":
+						algorithm = jwt.PS512
+					case "ES256":
+						algorithm = jwt.ES256
+					case "ES384":
+						algorithm = jwt.ES384
+					case "ES512":
+						algorithm = jwt.ES512
+					case "EDDSA":
+						algorithm = jwt.EdDSA
+					}
+
+					if isjwtAlgorithmNone(alg) {
+						algorithm = &algNONE{algValue: alg}
+					}
+					if algorithm == nil {
+						return nil, fmt.Errorf("invalid algorithm: %s", optionalAlgorithm)
+					}
+				}
+
+				if argSize > 2 {
+					optionalSignature = []byte(args[2].(string))
+				}
+
+				if argSize > 3 {
+					times := make([]interface{}, 2)
+					times[0] = nil
+					times[1] = args[3]
+
+					optionalMaxAgeUnix, err = getCurrentTimeFromUserInput(times)
+					if err != nil {
+						return nil, err
+					}
+
+					duration := time.Until(optionalMaxAgeUnix)
+					signOpts = append(signOpts, jwt.MaxAge(duration))
+				}
+
+				return jwt.Sign(algorithm, optionalSignature, jsonData, signOpts...)
+			}),
+		"json_minify": makeDslFunction(1, func(args ...interface{}) (interface{}, error) {
+			var data map[string]interface{}
+
+			err := json.Unmarshal([]byte(args[0].(string)), &data)
+			if err != nil {
+				return nil, err
+			}
+
+			minified, err := json.Marshal(data)
+			if err != nil {
+				return nil, err
+			}
+
+			return string(minified), nil
+		}),
+		"json_prettify": makeDslFunction(1, func(args ...interface{}) (interface{}, error) {
+			var buf bytes.Buffer
+
+			err := json.Indent(&buf, []byte(args[0].(string)), "", "    ")
+			if err != nil {
+				return nil, err
+			}
+
+			return buf.String(), nil
+		}),
 	}
 
 	dslFunctions = make(map[string]dslFunction, len(tempDslFunctions))
@@ -794,9 +929,18 @@ func init() {
 }
 
 func makeDslWithOptionalArgsFunction(signaturePart string, dslFunctionLogic govaluate.ExpressionFunction) func(functionName string) dslFunction {
+	return makeMultiSignatureDslFunction([]string{signaturePart}, dslFunctionLogic)
+}
+
+func makeMultiSignatureDslFunction(signatureParts []string, dslFunctionLogic govaluate.ExpressionFunction) func(functionName string) dslFunction {
 	return func(functionName string) dslFunction {
+		methodSignatures := make([]string, 0, len(signatureParts))
+		for _, signaturePart := range signatureParts {
+			methodSignatures = append(methodSignatures, functionName+signaturePart)
+		}
+
 		return dslFunction{
-			functionName + signaturePart,
+			methodSignatures,
 			dslFunctionLogic,
 		}
 	}
@@ -806,7 +950,7 @@ func makeDslFunction(numberOfParameters int, dslFunctionLogic govaluate.Expressi
 	return func(functionName string) dslFunction {
 		signature := functionName + createSignaturePart(numberOfParameters)
 		return dslFunction{
-			signature,
+			[]string{signature},
 			func(args ...interface{}) (interface{}, error) {
 				if len(args) != numberOfParameters {
 					return nil, fmt.Errorf(invalidDslFunctionMessageTemplate, invalidDslFunctionError, signature)
@@ -843,7 +987,7 @@ func helperFunctions() map[string]govaluate.ExpressionFunction {
 func AddHelperFunction(key string, value func(args ...interface{}) (interface{}, error)) error {
 	if _, ok := dslFunctions[key]; !ok {
 		dslFunction := dslFunctions[key]
-		dslFunction.signature = "(args ...interface{}) interface{}"
+		dslFunction.signatures = []string{"(args ...interface{}) interface{}"}
 		dslFunction.expressFunc = value
 		return nil
 	}
@@ -873,7 +1017,7 @@ func getDslFunctionSignatures() []string {
 	result := make([]string, 0, len(dslFunctions))
 
 	for _, dslFunction := range dslFunctions {
-		result = append(result, dslFunction.signature)
+		result = append(result, dslFunction.signatures...)
 	}
 
 	return result
@@ -1028,6 +1172,31 @@ func stringNumberToDecimal(args []interface{}, prefix string, base int) (interfa
 	return nil, fmt.Errorf("invalid number: %s", input)
 }
 
+func toChunks(input string, chunkSize int) []string {
+	if chunkSize <= 0 || chunkSize >= len(input) {
+		return []string{input}
+	}
+	var chunks = make([]string, 0, (len(input)-1)/chunkSize+1)
+	currentLength := 0
+	currentStart := 0
+	for i := range input {
+		if currentLength == chunkSize {
+			chunks = append(chunks, input[currentStart:i])
+			currentLength = 0
+			currentStart = i
+		}
+		currentLength++
+	}
+	chunks = append(chunks, input[currentStart:])
+	return chunks
+}
+
+func pkcs5padding(ciphertext []byte, blockSize int, after int) []byte {
+	padding := (blockSize - len(ciphertext)%blockSize)
+	padtext := bytes.Repeat([]byte{byte(padding)}, padding)
+	return append(ciphertext, padtext...)
+}
+
 type CompilationError struct {
 	DslSignature string
 	WrappedError error
@@ -1039,4 +1208,29 @@ func (e *CompilationError) Error() string {
 
 func (e *CompilationError) Unwrap() error {
 	return e.WrappedError
+}
+
+type algNONE struct {
+	algValue string
+}
+
+func (a *algNONE) Name() string {
+	return a.algValue
+}
+
+func (a *algNONE) Sign(key jwt.PrivateKey, headerAndPayload []byte) ([]byte, error) {
+	return nil, nil
+}
+
+func (a *algNONE) Verify(key jwt.PublicKey, headerAndPayload []byte, signature []byte) error {
+	if !bytes.Equal(signature, []byte{}) {
+		return jwt.ErrTokenSignature
+	}
+
+	return nil
+}
+
+func isjwtAlgorithmNone(alg string) bool {
+	alg = strings.TrimSpace(alg)
+	return strings.ToLower(alg) == "none"
 }

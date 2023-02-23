@@ -1,11 +1,12 @@
 package protocols
 
 import (
-	"github.com/projectdiscovery/nuclei/v2/pkg/utils/ratelimit"
+	"github.com/projectdiscovery/ratelimit"
 
 	"github.com/logrusorgru/aurora"
 
 	"github.com/projectdiscovery/nuclei/v2/pkg/catalog"
+	"github.com/projectdiscovery/nuclei/v2/pkg/input"
 	"github.com/projectdiscovery/nuclei/v2/pkg/model"
 	"github.com/projectdiscovery/nuclei/v2/pkg/operators"
 	"github.com/projectdiscovery/nuclei/v2/pkg/operators/extractors"
@@ -64,12 +65,15 @@ type ExecuterOptions struct {
 	Interactsh *interactsh.Client
 	// HostErrorsCache is an optional cache for handling host errors
 	HostErrorsCache hosterrorscache.CacheInterface
-	// Stop execution once first match is found
+	// Stop execution once first match is found (Assigned while parsing templates)
+	// Note: this is different from Options.StopAtFirstMatch (Assigned from CLI option)
 	StopAtFirstMatch bool
 	// Variables is a list of variables from template
 	Variables variables.Variable
 	// ExcludeMatchers is the list of matchers to exclude
 	ExcludeMatchers *excludematchers.ExcludeMatchers
+	// InputHelper is a helper for input normalization
+	InputHelper *input.Helper
 
 	Operators []*operators.Operators // only used by offlinehttp module
 

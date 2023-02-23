@@ -1,8 +1,8 @@
 package core
 
 import (
-	"github.com/remeh/sizedwaitgroup"
-	"go.uber.org/atomic"
+	"sync"
+	"sync/atomic"
 
 	"github.com/projectdiscovery/gologger"
 	"github.com/projectdiscovery/nuclei/v2/pkg/output"
@@ -10,66 +10,43 @@ import (
 	"github.com/projectdiscovery/nuclei/v2/pkg/templates"
 	"github.com/projectdiscovery/nuclei/v2/pkg/templates/types"
 	generalTypes "github.com/projectdiscovery/nuclei/v2/pkg/types"
+	"github.com/remeh/sizedwaitgroup"
 )
 
-// Execute takes a list of templates/workflows that have been compiled
-// and executes them based on provided concurrency options.
-//
-// All the execution logic for the templates/workflows happens in this part
-// of the engine.
-func (e *Engine) Execute(templates []*templates.Template, target InputProvider) *atomic.Bool {
-	return e.ExecuteWithOpts(templates, target, false)
-}
+/*
+Executors are low level executors that deals with template execution on a target
+*/
 
-// ExecuteWithOpts executes with the full options
-func (e *Engine) ExecuteWithOpts(templatesList []*templates.Template, target InputProvider, noCluster bool) *atomic.Bool {
-	var finalTemplates []*templates.Template
-	if !noCluster {
-		finalTemplates, _ = templates.ClusterTemplates(templatesList, e.executerOpts)
-	} else {
-		finalTemplates = templatesList
-	}
-
-	results := &atomic.Bool{}
-	for _, template := range finalTemplates {
-		templateType := template.Type()
-
-		var wg *sizedwaitgroup.SizedWaitGroup
-		if templateType == types.HeadlessProtocol {
-			wg = e.workPool.Headless
-		} else {
-			wg = e.workPool.Default
-		}
-
-		wg.Add()
-		go func(tpl *templates.Template) {
-			switch {
-			case tpl.SelfContained:
-				// Self Contained requests are executed here separately
-				e.executeSelfContainedTemplateWithInput(tpl, results)
-			default:
-				// All other request types are executed here
-				e.executeModelWithInput(templateType, tpl, target, results)
+// executeAllSelfContained executes all self contained templates that do not use `target`
+func (e *Engine) executeAllSelfContained(alltemplates []*templates.Template, results *atomic.Bool, sg *sync.WaitGroup) {
+	for _, v := range alltemplates {
+		sg.Add(1)
+		go func(template *templates.Template) {
+			defer sg.Done()
+			var err error
+			var match bool
+			if e.Callback != nil {
+				err = template.Executer.ExecuteWithResults(contextargs.New(), func(event *output.InternalWrappedEvent) {
+					for _, result := range event.Results {
+						e.Callback(result)
+					}
+				})
+				match = true
+			} else {
+				match, err = template.Executer.Execute(contextargs.New())
 			}
-			wg.Done()
-		}(template)
+			if err != nil {
+				gologger.Warning().Msgf("[%s] Could not execute step: %s\n", e.executerOpts.Colorizer.BrightBlue(template.ID), err)
+			}
+			results.CompareAndSwap(false, match)
+		}(v)
 	}
-	e.workPool.Wait()
-	return results
 }
 
-// processSelfContainedTemplates execute a self-contained template.
-func (e *Engine) executeSelfContainedTemplateWithInput(template *templates.Template, results *atomic.Bool) {
-	match, err := template.Executer.Execute(contextargs.New())
-	if err != nil {
-		gologger.Warning().Msgf("[%s] Could not execute step: %s\n", e.executerOpts.Colorizer.BrightBlue(template.ID), err)
-	}
-	results.CompareAndSwap(false, match)
-}
-
-// executeModelWithInput executes a type of template with input
-func (e *Engine) executeModelWithInput(templateType types.ProtocolType, template *templates.Template, target InputProvider, results *atomic.Bool) {
-	wg := e.workPool.InputPool(templateType)
+// executeTemplateWithTarget executes a given template on x targets (with a internal targetpool(i.e concurrency))
+func (e *Engine) executeTemplateWithTargets(template *templates.Template, target InputProvider, results *atomic.Bool) {
+	// this is target pool i.e max target to execute
+	wg := e.workPool.InputPool(template.Type())
 
 	var (
 		index uint32
@@ -98,7 +75,7 @@ func (e *Engine) executeModelWithInput(templateType types.ProtocolType, template
 		currentInfo.Unlock()
 	}
 
-	target.Scan(func(scannedValue string) {
+	target.Scan(func(scannedValue *contextargs.MetaInput) bool {
 		// Best effort to track the host progression
 		// skips indexes lower than the minimum in-flight at interruption time
 		var skip bool
@@ -122,12 +99,12 @@ func (e *Engine) executeModelWithInput(templateType types.ProtocolType, template
 		currentInfo.Unlock()
 
 		// Skip if the host has had errors
-		if e.executerOpts.HostErrorsCache != nil && e.executerOpts.HostErrorsCache.Check(scannedValue) {
-			return
+		if e.executerOpts.HostErrorsCache != nil && e.executerOpts.HostErrorsCache.Check(scannedValue.ID()) {
+			return true
 		}
 
 		wg.WaitGroup.Add()
-		go func(index uint32, skip bool, value string) {
+		go func(index uint32, skip bool, value *contextargs.MetaInput) {
 			defer wg.WaitGroup.Done()
 			defer cleanupInFlight(index)
 			if skip {
@@ -136,21 +113,30 @@ func (e *Engine) executeModelWithInput(templateType types.ProtocolType, template
 
 			var match bool
 			var err error
-			switch templateType {
+			switch template.Type() {
 			case types.WorkflowProtocol:
 				match = e.executeWorkflow(value, template.CompiledWorkflow)
 			default:
 				ctxArgs := contextargs.New()
-				ctxArgs.Input = value
-				match, err = template.Executer.Execute(ctxArgs)
+				ctxArgs.MetaInput = value
+				if e.Callback != nil {
+					err = template.Executer.ExecuteWithResults(ctxArgs, func(event *output.InternalWrappedEvent) {
+						for _, result := range event.Results {
+							e.Callback(result)
+						}
+					})
+					match = true
+				} else {
+					match, err = template.Executer.Execute(ctxArgs)
+				}
 			}
 			if err != nil {
 				gologger.Warning().Msgf("[%s] Could not execute step: %s\n", e.executerOpts.Colorizer.BrightBlue(template.ID), err)
 			}
 			results.CompareAndSwap(false, match)
 		}(index, skip, scannedValue)
-
 		index++
+		return true
 	})
 	wg.WaitGroup.Wait()
 
@@ -160,64 +146,52 @@ func (e *Engine) executeModelWithInput(templateType types.ProtocolType, template
 	currentInfo.Unlock()
 }
 
-// ExecuteWithResults a list of templates with results
-func (e *Engine) ExecuteWithResults(templatesList []*templates.Template, target InputProvider, callback func(*output.ResultEvent)) *atomic.Bool {
-	results := &atomic.Bool{}
-	for _, template := range templatesList {
-		templateType := template.Type()
+// executeTemplatesOnTarget execute given templates on given single target
+func (e *Engine) executeTemplatesOnTarget(alltemplates []*templates.Template, target *contextargs.MetaInput, results *atomic.Bool) {
+	// all templates are executed on single target
 
-		var wg *sizedwaitgroup.SizedWaitGroup
-		if templateType == types.HeadlessProtocol {
-			wg = e.workPool.Headless
+	// wp is workpool that contains different waitgroups for
+	// headless and non-headless templates
+	// global waitgroup should not be used here
+	wp := e.GetWorkPool()
+
+	for _, tpl := range alltemplates {
+		var sg *sizedwaitgroup.SizedWaitGroup
+		if tpl.Type() == types.HeadlessProtocol {
+			sg = wp.Headless
 		} else {
-			wg = e.workPool.Default
+			sg = wp.Default
 		}
-
-		wg.Add()
-		go func(tpl *templates.Template) {
-			e.executeModelWithInputAndResult(templateType, tpl, target, results, callback)
-			wg.Done()
-		}(template)
-	}
-	e.workPool.Wait()
-	return results
-}
-
-// executeModelWithInputAndResult executes a type of template with input and result
-func (e *Engine) executeModelWithInputAndResult(templateType types.ProtocolType, template *templates.Template, target InputProvider, results *atomic.Bool, callback func(*output.ResultEvent)) {
-	wg := e.workPool.InputPool(templateType)
-
-	target.Scan(func(scannedValue string) {
-		// Skip if the host has had errors
-		if e.executerOpts.HostErrorsCache != nil && e.executerOpts.HostErrorsCache.Check(scannedValue) {
-			return
-		}
-
-		wg.WaitGroup.Add()
-		go func(value string) {
-			defer wg.WaitGroup.Done()
+		sg.Add()
+		go func(template *templates.Template, value *contextargs.MetaInput, wg *sizedwaitgroup.SizedWaitGroup) {
+			defer wg.Done()
 
 			var match bool
 			var err error
-			switch templateType {
+			switch template.Type() {
 			case types.WorkflowProtocol:
 				match = e.executeWorkflow(value, template.CompiledWorkflow)
 			default:
 				ctxArgs := contextargs.New()
-				ctxArgs.Input = value
-				err = template.Executer.ExecuteWithResults(ctxArgs, func(event *output.InternalWrappedEvent) {
-					for _, result := range event.Results {
-						callback(result)
-					}
-				})
+				ctxArgs.MetaInput = value
+				if e.Callback != nil {
+					err = template.Executer.ExecuteWithResults(ctxArgs, func(event *output.InternalWrappedEvent) {
+						for _, result := range event.Results {
+							e.Callback(result)
+						}
+					})
+					match = true
+				} else {
+					match, err = template.Executer.Execute(ctxArgs)
+				}
 			}
 			if err != nil {
 				gologger.Warning().Msgf("[%s] Could not execute step: %s\n", e.executerOpts.Colorizer.BrightBlue(template.ID), err)
 			}
 			results.CompareAndSwap(false, match)
-		}(scannedValue)
-	})
-	wg.WaitGroup.Wait()
+		}(tpl, target, sg)
+	}
+	wp.Wait()
 }
 
 type ChildExecuter struct {
@@ -233,7 +207,7 @@ func (e *ChildExecuter) Close() *atomic.Bool {
 }
 
 // Execute executes a template and URLs
-func (e *ChildExecuter) Execute(template *templates.Template, URL string) {
+func (e *ChildExecuter) Execute(template *templates.Template, value *contextargs.MetaInput) {
 	templateType := template.Type()
 
 	var wg *sizedwaitgroup.SizedWaitGroup
@@ -245,14 +219,15 @@ func (e *ChildExecuter) Execute(template *templates.Template, URL string) {
 
 	wg.Add()
 	go func(tpl *templates.Template) {
+		defer wg.Done()
+
 		ctxArgs := contextargs.New()
-		ctxArgs.Input = URL
+		ctxArgs.MetaInput = value
 		match, err := template.Executer.Execute(ctxArgs)
 		if err != nil {
 			gologger.Warning().Msgf("[%s] Could not execute step: %s\n", e.e.executerOpts.Colorizer.BrightBlue(template.ID), err)
 		}
 		e.results.CompareAndSwap(false, match)
-		wg.Done()
 	}(template)
 }
 

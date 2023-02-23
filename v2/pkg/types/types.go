@@ -3,10 +3,10 @@ package types
 import (
 	"time"
 
-	"github.com/projectdiscovery/fileutil"
 	"github.com/projectdiscovery/goflags"
 	"github.com/projectdiscovery/nuclei/v2/pkg/model/types/severity"
 	"github.com/projectdiscovery/nuclei/v2/pkg/templates/types"
+	fileutil "github.com/projectdiscovery/utils/file"
 )
 
 // Options contains the configuration options for nuclei scanner.
@@ -95,6 +95,44 @@ type Options struct {
 	CloudURL string
 	// CloudAPIKey is the api-key for the nuclei cloud endpoint
 	CloudAPIKey string
+	// Scanlist feature to get all the scan ids for a user
+	ScanList bool
+	// ListDatasources enables listing of datasources for user
+	ListDatasources bool
+	// ListTargets enables listing of targets for user
+	ListTargets bool
+	// ListTemplates enables listing of templates for user
+	ListTemplates bool
+	// ListReportingSources enables listing of reporting source
+	ListReportingSources bool
+	// DisableReportingSource disables a reporting source
+	DisableReportingSource string
+	// EnableReportingSource enables a reporting source
+	EnableReportingSource string
+	// Limit the number of items at a time
+	OutputLimit int
+	// Nostore
+	NoStore bool
+	// Delete scan
+	DeleteScan string
+	// AddDatasource adds a datasource to cloud storage
+	AddDatasource string
+	// RemoveDatasource deletes a datasource from cloud storage
+	RemoveDatasource string
+	// AddTemplate adds a list of templates to custom datasource
+	AddTemplate string
+	// AddTarget adds a list of targets to custom datasource
+	AddTarget string
+	// GetTemplate gets a template by id
+	GetTemplate string
+	// GetTarget gets a target by id
+	GetTarget string
+	// RemoveTemplate removes a list of templates
+	RemoveTemplate string
+	// RemoveTarget removes a list of targets
+	RemoveTarget string
+	// Get issues for a scan
+	ScanOutput string
 	// ResolversFile is a file containing resolvers for nuclei.
 	ResolversFile string
 	// StatsInterval is the number of seconds to display stats after
@@ -103,6 +141,8 @@ type Options struct {
 	MetricsPort int
 	// MaxHostError is the maximum number of errors allowed for a host
 	MaxHostError int
+	// NoHostErrors disables host skipping after maximum number of errors
+	NoHostErrors bool
 	// BulkSize is the of targets analyzed in parallel for each template
 	BulkSize int
 	// TemplateThreads is the number of templates executed in parallel
@@ -141,12 +181,18 @@ type Options struct {
 	// using same matchers/extractors from http protocol without the need
 	// to send a new request, reading responses from a file.
 	OfflineHTTP bool
+	// Force HTTP2 requests
+	ForceAttemptHTTP2 bool
 	// StatsJSON writes stats output in JSON format
 	StatsJSON bool
 	// Headless specifies whether to allow headless mode templates
 	Headless bool
 	// ShowBrowser specifies whether the show the browser in headless mode
 	ShowBrowser bool
+	// NoTables disables pretty printing of cloud results in tables
+	NoTables bool
+	// DisableClustering disables clustering of templates
+	DisableClustering bool
 	// UseInstalledChrome skips chrome install and use local instance
 	UseInstalledChrome bool
 	// SystemResolvers enables override of nuclei's DNS client opting to use system resolver stack.
@@ -161,6 +207,8 @@ type Options struct {
 	DebugRequests bool
 	// DebugResponse mode allows debugging response for the engine
 	DebugResponse bool
+	// DisableHTTPProbe disables http probing feature of input normalization
+	DisableHTTPProbe bool
 	// LeaveDefaultPorts skips normalization of default ports
 	LeaveDefaultPorts bool
 	// AutomaticScan enables automatic tech based template execution
@@ -176,6 +224,8 @@ type Options struct {
 	// Verbose flag indicates whether to show verbose output or not
 	Verbose        bool
 	VerboseVerbose bool
+	// ShowVarDump displays variable dump
+	ShowVarDump bool
 	// No-Color disables the colored output.
 	NoColor bool
 	// UpdateTemplates updates the templates installed at startup
@@ -190,6 +240,8 @@ type Options struct {
 	EnableProgressBar bool
 	// TemplatesVersion shows the templates installed version
 	TemplatesVersion bool
+	// TemplateDisplay displays the template contents
+	TemplateDisplay bool
 	// TemplateList lists available templates
 	TemplateList bool
 	// HangMonitor enables nuclei hang monitoring
@@ -202,8 +254,8 @@ type Options struct {
 	Stream bool
 	// NoMeta disables display of metadata for the matches
 	NoMeta bool
-	// NoTimestamp disables display of timestamp for the matcher
-	NoTimestamp bool
+	// Timestamp enables display of timestamp for the matcher
+	Timestamp bool
 	// Project is used to avoid sending same HTTP request multiple times
 	Project bool
 	// NewTemplates only runs newly added templates from the repository
@@ -228,6 +280,8 @@ type Options struct {
 	ClientCAFile string
 	// Use ZTLS library
 	ZTLS bool
+	// Sandbox enables sandboxed nuclei template execution
+	Sandbox bool
 	// ShowMatchLine enables display of match line number
 	ShowMatchLine bool
 	// EnablePprof enables exposing pprof runtime information with a webserver.
@@ -244,6 +298,8 @@ type Options struct {
 	Interface string
 	// SourceIP sets custom source IP address for network requests
 	SourceIP string
+	// AttackType overrides template level attack-type configuration
+	AttackType string
 	// ResponseReadSize is the maximum size of response to read
 	ResponseReadSize int
 	// ResponseSaveSize is the maximum size of response to save
@@ -258,8 +314,38 @@ type Options struct {
 	IncludeConditions goflags.StringSlice
 	// Custom Config Directory
 	CustomConfigDir string
-
-	ConfigPath string // Used by healthcheck
+	// Enable uncover egine
+	Uncover bool
+	// Uncover search query
+	UncoverQuery goflags.StringSlice
+	// Uncover search engine
+	UncoverEngine goflags.StringSlice
+	// Uncover search field
+	UncoverField string
+	// Uncover search limit
+	UncoverLimit int
+	// Uncover search delay
+	UncoverDelay int
+	// ConfigPath contains the config path (used by healthcheck)
+	ConfigPath string
+	// ScanAllIPs associated to a dns record
+	ScanAllIPs bool
+	// IPVersion to scan (4,6)
+	IPVersion goflags.StringSlice
+	// Github token used to clone/pull from private repos for custom templates
+	GithubToken string
+	// GithubTemplateRepo is the list of custom public/private templates github repos
+	GithubTemplateRepo []string
+	// AWS access key for downloading templates from s3 bucket
+	AwsAccessKey string
+	// AWS secret key for downloading templates from s3 bucket
+	AwsSecretKey string
+	// AWS bucket name for downloading templates from s3 bucket
+	AwsBucketName string
+	// AWS Region name where aws s3 bucket is located
+	AwsRegion string
+	// Scan Strategy (auto,hosts-spray,templates-spray)
+	ScanStrategy string
 }
 
 func (options *Options) AddVarPayload(key string, value interface{}) {
@@ -301,4 +387,25 @@ func DefaultOptions() *Options {
 		Retries:                 1,
 		MaxHostError:            30,
 	}
+}
+
+// HasCloudOptions returns true if cloud options have been specified
+func (options *Options) HasCloudOptions() bool {
+	return options.ScanList ||
+		options.DeleteScan != "" ||
+		options.ScanOutput != "" ||
+		options.ListDatasources ||
+		options.ListTargets ||
+		options.ListTemplates ||
+		options.RemoveDatasource != "" ||
+		options.AddTarget != "" ||
+		options.AddTemplate != "" ||
+		options.RemoveTarget != "" ||
+		options.RemoveTemplate != "" ||
+		options.GetTarget != "" ||
+		options.GetTemplate != ""
+}
+
+func (options *Options) ShouldUseHostError() bool {
+	return options.MaxHostError > 0 && !options.NoHostErrors
 }
