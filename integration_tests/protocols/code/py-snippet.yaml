@@ -1,0 +1,24 @@
+id: py-code-snippet
+
+info:
+  name: py-code-snippet
+  author: pdteam
+  severity: info
+  tags: code
+  description: |
+    py-code-snippet
+
+code:
+  - engine:
+      - py
+      - python3
+      - python
+    source: |
+      import sys
+      print("hello from " + sys.stdin.read())
+    
+    matchers:
+      - type: word
+        words:
+          - "hello from input"
+# digest: 4a0a00473045022100c291615cf2a8005450c17a6554e81a9cdab14743b299f0679c644247929198b502206fdacc8ab173bde2b4015340012637916bf2659f66f320fcc06b97ac639072a1:4a3eb6b4988d95847d4203be25ed1d46

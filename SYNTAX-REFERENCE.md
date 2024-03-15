@@ -74,12 +74,36 @@ info:
 
 <div class="dd">
 
+<code>flow</code>  <i>string</i>
+
+</div>
+<div class="dt">
+
+description: |
+   Flow contains the execution flow for the template.
+ examples:
+   - flow: |
+ 		for region in regions {
+		    http(0)
+		 }
+		 for vpc in vpcs {
+		    http(1)
+		 }
+
+
+</div>
+
+<hr />
+
+<div class="dd">
+
 <code>requests</code>  <i>[]<a href="#httprequest">http.Request</a></i>
 
 </div>
 <div class="dt">
 
 Requests contains the http request to make in the template.
+WARNING: 'requests' will be deprecated and will be removed in a future release. Please use 'http' instead.
 
 
 
@@ -106,6 +130,24 @@ requests:
     method: GET
 ```
 
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>http</code>  <i>[]<a href="#httprequest">http.Request</a></i>
+
+</div>
+<div class="dt">
+
+description: |
+   HTTP contains the http request to make in the template.
+ examples:
+   - value: exampleNormalHTTPRequest
+ RequestsWithHTTP is placeholder(internal) only, and should not be used instead use RequestsHTTP
+ Deprecated: Use RequestsHTTP instead.
 
 </div>
 
@@ -166,8 +208,6 @@ file:
             - amzn\.mws\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
     extensions:
         - all
-    archive: false
-    mimetype: false
 ```
 
 
@@ -183,6 +223,7 @@ file:
 <div class="dt">
 
 Network contains the network request to make in the template
+WARNING: 'network' will be deprecated and will be removed in a future release. Please use 'tcp' instead.
 
 
 
@@ -203,6 +244,24 @@ network:
             - zookeeper.version
 ```
 
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>tcp</code>  <i>[]<a href="#networkrequest">network.Request</a></i>
+
+</div>
+<div class="dt">
+
+description: |
+   TCP contains the network request to make in the template
+ examples:
+   - value: exampleNormalNetworkRequest
+ RequestsWithTCP is placeholder(internal) only, and should not be used instead use RequestsNetwork
+ Deprecated: Use RequestsNetwork instead.
 
 </div>
 
@@ -262,12 +321,25 @@ WHOIS contains the WHOIS request to make in the template.
 
 <div class="dd">
 
-<code>workflows</code>  <i>[]<a href="#workflowsworkflowtemplate">workflows.WorkflowTemplate</a></i>
+<code>code</code>  <i>[]<a href="#coderequest">code.Request</a></i>
 
 </div>
 <div class="dt">
 
-Workflows is a list of workflows to execute for a template.
+Code contains code snippets.
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>javascript</code>  <i>[]<a href="#javascriptrequest">javascript.Request</a></i>
+
+</div>
+<div class="dt">
+
+Javascript contains the javascript request to make in the template.
 
 </div>
 
@@ -325,6 +397,19 @@ Valid values:
 <div class="dt">
 
 Variables contains any variables for the current request.
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>constants</code>  <i>map[string]interface{}</i>
+
+</div>
+<div class="dt">
+
+Constants contains any scalar constant for the current template
 
 </div>
 
@@ -464,7 +549,36 @@ description: Subversion ALM for the enterprise before 8.8.2 allows reflected XSS
 
 <div class="dd">
 
-<code>reference</code>  <i><a href="#stringslicestringslice">stringslice.StringSlice</a></i>
+<code>impact</code>  <i>string</i>
+
+</div>
+<div class="dt">
+
+Impact of the template.
+
+You can go in-depth here on impact of the template.
+
+
+
+Examples:
+
+
+```yaml
+impact: Successful exploitation of this vulnerability could allow an attacker to execute arbitrary SQL queries, potentially leading to unauthorized access, data leakage, or data manipulation.
+```
+
+```yaml
+impact: Successful exploitation of this vulnerability could allow an attacker to execute arbitrary script code in the context of the victim's browser, potentially leading to session hijacking, defacement, or theft of sensitive information.
+```
+
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>reference</code>  <i><a href="#stringslicerawstringslice">stringslice.RawStringSlice</a></i>
 
 </div>
 <div class="dt">
@@ -579,15 +693,9 @@ Appears in:
 
 - <code><a href="#modelinfo">model.Info</a>.tags</code>
 
-- <code><a href="#modelinfo">model.Info</a>.reference</code>
-
 - <code><a href="#modelclassification">model.Classification</a>.cve-id</code>
 
 - <code><a href="#modelclassification">model.Classification</a>.cwe-id</code>
-
-- <code><a href="#workflowsworkflowtemplate">workflows.WorkflowTemplate</a>.tags</code>
-
-- <code><a href="#workflowsmatcher">workflows.Matcher</a>.name</code>
 
 
 ```yaml
@@ -598,14 +706,27 @@ Appears in:
 cve,cve2019,grafana,auth-bypass,dos
 ```
 ```yaml
-- https://github.com/strapi/strapi
-- https://github.com/getgrav/grav
-```
-```yaml
 CVE-2020-14420
 ```
 ```yaml
 CWE-22
+```
+
+
+
+
+
+## stringslice.RawStringSlice
+
+Appears in:
+
+
+- <code><a href="#modelinfo">model.Info</a>.reference</code>
+
+
+```yaml
+- https://github.com/strapi/strapi
+- https://github.com/getgrav/grav
 ```
 
 
@@ -765,6 +886,75 @@ cvss-score: "9.8"
 
 <hr />
 
+<div class="dd">
+
+<code>epss-score</code>  <i>float64</i>
+
+</div>
+<div class="dt">
+
+EPSS Score for the template.
+
+
+
+Examples:
+
+
+```yaml
+epss-score: "0.42509"
+```
+
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>epss-percentile</code>  <i>float64</i>
+
+</div>
+<div class="dt">
+
+EPSS Percentile for the template.
+
+
+
+Examples:
+
+
+```yaml
+epss-percentile: "0.42509"
+```
+
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>cpe</code>  <i>string</i>
+
+</div>
+<div class="dt">
+
+CPE for the template.
+
+
+
+Examples:
+
+
+```yaml
+cpe: cpe:/a:vendor:product:version
+```
+
+
+</div>
+
+<hr />
+
 
 
 
@@ -776,6 +966,8 @@ Appears in:
 
 
 - <code><a href="#template">Template</a>.requests</code>
+
+- <code><a href="#template">Template</a>.http</code>
 
 
 ```yaml
@@ -816,58 +1008,6 @@ Part Definitions:
 - <code>all</code> - HTTP response body + headers
 - <code>cookies_from_response</code> - HTTP response cookies in name:value format
 - <code>headers_from_response</code> - HTTP response headers in name:value format
-
-<hr />
-
-<div class="dd">
-
-<code>matchers</code>  <i>[]<a href="#matchersmatcher">matchers.Matcher</a></i>
-
-</div>
-<div class="dt">
-
-Matchers contains the detection mechanism for the request to identify
-whether the request was successful by doing pattern matching
-on request/responses.
-
-Multiple matchers can be combined with `matcher-condition` flag
-which accepts either `and` or `or` as argument.
-
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>extractors</code>  <i>[]<a href="#extractorsextractor">extractors.Extractor</a></i>
-
-</div>
-<div class="dt">
-
-Extractors contains the extraction mechanism for the request to identify
-and extract parts of the response.
-
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>matchers-condition</code>  <i>string</i>
-
-</div>
-<div class="dt">
-
-MatchersCondition is the condition between the matchers. Default is OR.
-
-
-Valid values:
-
-
-  - <code>and</code>
-
-  - <code>or</code>
-</div>
 
 <hr />
 
@@ -1232,6 +1372,19 @@ Fuzzing describes schema to fuzz http requests
 
 <div class="dd">
 
+<code>self-contained</code>  <i>bool</i>
+
+</div>
+<div class="dt">
+
+SelfContained specifies if the request is self-contained.
+
+</div>
+
+<hr />
+
+<div class="dd">
+
 <code>signature</code>  <i><a href="#signaturetypeholder">SignatureTypeHolder</a></i>
 
 </div>
@@ -1257,6 +1410,19 @@ Valid values:
 
 CookieReuse is an optional setting that enables cookie reuse for
 all requests defined in raw section.
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>disable-cookie</code>  <i>bool</i>
+
+</div>
+<div class="dt">
+
+DisableCookie is an optional setting that disables cookie reuse
 
 </div>
 
@@ -1432,6 +1598,379 @@ DigestAuthPassword specifies the password for digest authentication
 
 <hr />
 
+<div class="dd">
+
+<code>disable-path-automerge</code>  <i>bool</i>
+
+</div>
+<div class="dt">
+
+DisablePathAutomerge disables merging target url path with raw request path
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>filters</code>  <i>[]<a href="#matchersmatcher">matchers.Matcher</a></i>
+
+</div>
+<div class="dt">
+
+Filter is matcher-like field to check if fuzzing should be performed on this request or not
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>filters-condition</code>  <i>string</i>
+
+</div>
+<div class="dt">
+
+Filter condition is the condition to apply on the filter (AND/OR). Default is OR
+
+</div>
+
+<hr />
+
+
+
+
+
+## generators.AttackTypeHolder
+AttackTypeHolder is used to hold internal type of the protocol
+
+Appears in:
+
+
+- <code><a href="#httprequest">http.Request</a>.attack</code>
+
+- <code><a href="#dnsrequest">dns.Request</a>.attack</code>
+
+- <code><a href="#networkrequest">network.Request</a>.attack</code>
+
+- <code><a href="#headlessrequest">headless.Request</a>.attack</code>
+
+- <code><a href="#websocketrequest">websocket.Request</a>.attack</code>
+
+- <code><a href="#javascriptrequest">javascript.Request</a>.attack</code>
+
+
+
+
+
+<hr />
+
+<div class="dd">
+
+<code></code>  <i>AttackType</i>
+
+</div>
+<div class="dt">
+
+
+
+
+Enum Values:
+
+
+  - <code>batteringram</code>
+
+  - <code>pitchfork</code>
+
+  - <code>clusterbomb</code>
+</div>
+
+<hr />
+
+
+
+
+
+## HTTPMethodTypeHolder
+HTTPMethodTypeHolder is used to hold internal type of the HTTP Method
+
+Appears in:
+
+
+- <code><a href="#httprequest">http.Request</a>.method</code>
+
+
+
+
+
+<hr />
+
+<div class="dd">
+
+<code></code>  <i>HTTPMethodType</i>
+
+</div>
+<div class="dt">
+
+
+
+
+Enum Values:
+
+
+  - <code>GET</code>
+
+  - <code>HEAD</code>
+
+  - <code>POST</code>
+
+  - <code>PUT</code>
+
+  - <code>DELETE</code>
+
+  - <code>CONNECT</code>
+
+  - <code>OPTIONS</code>
+
+  - <code>TRACE</code>
+
+  - <code>PATCH</code>
+
+  - <code>PURGE</code>
+
+  - <code>Debug</code>
+</div>
+
+<hr />
+
+
+
+
+
+## fuzz.Rule
+Rule is a single rule which describes how to fuzz the request
+
+Appears in:
+
+
+- <code><a href="#httprequest">http.Request</a>.fuzzing</code>
+
+- <code><a href="#headlessrequest">headless.Request</a>.fuzzing</code>
+
+
+
+
+
+<hr />
+
+<div class="dd">
+
+<code>type</code>  <i>string</i>
+
+</div>
+<div class="dt">
+
+Type is the type of fuzzing rule to perform.
+
+replace replaces the values entirely. prefix prefixes the value. postfix postfixes the value
+and infix places between the values.
+
+
+Valid values:
+
+
+  - <code>replace</code>
+
+  - <code>prefix</code>
+
+  - <code>postfix</code>
+
+  - <code>infix</code>
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>part</code>  <i>string</i>
+
+</div>
+<div class="dt">
+
+Part is the part of request to fuzz.
+
+query fuzzes the query part of url. More parts will be added later.
+
+
+Valid values:
+
+
+  - <code>query</code>
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>mode</code>  <i>string</i>
+
+</div>
+<div class="dt">
+
+Mode is the mode of fuzzing to perform.
+
+single fuzzes one value at a time. multiple fuzzes all values at same time.
+
+
+Valid values:
+
+
+  - <code>single</code>
+
+  - <code>multiple</code>
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>keys</code>  <i>[]string</i>
+
+</div>
+<div class="dt">
+
+Keys is the optional list of key named parameters to fuzz.
+
+
+
+Examples:
+
+
+```yaml
+# Examples of keys
+keys:
+    - url
+    - file
+    - host
+```
+
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>keys-regex</code>  <i>[]string</i>
+
+</div>
+<div class="dt">
+
+KeysRegex is the optional list of regex key parameters to fuzz.
+
+
+
+Examples:
+
+
+```yaml
+# Examples of key regex
+keys-regex:
+    - url.*
+```
+
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>values</code>  <i>[]string</i>
+
+</div>
+<div class="dt">
+
+Values is the optional list of regex value parameters to fuzz.
+
+
+
+Examples:
+
+
+```yaml
+# Examples of value regex
+values:
+    - https?://.*
+```
+
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>fuzz</code>  <i><a href="#sliceormapslice">SliceOrMapSlice</a></i>
+
+</div>
+<div class="dt">
+
+description: |
+   Fuzz is the list of payloads to perform substitutions with.
+ examples:
+   - name: Examples of fuzz
+     value: >
+       []string{"{{ssrf}}", "{{interactsh-url}}", "example-value"}
+      or
+       x-header: 1
+       x-header: 2
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>replace-regex</code>  <i>string</i>
+
+</div>
+<div class="dt">
+
+replace-regex is regex for regex-replace rule type
+it is only required for replace-regex rule type
+
+</div>
+
+<hr />
+
+
+
+
+
+## SliceOrMapSlice
+
+Appears in:
+
+
+- <code><a href="#fuzzrule">fuzz.Rule</a>.fuzz</code>
+
+
+
+
+
+
+
+## SignatureTypeHolder
+SignatureTypeHolder is used to hold internal type of the signature
+
+Appears in:
+
+
+- <code><a href="#httprequest">http.Request</a>.signature</code>
+
+
+
 
 
 
@@ -1442,21 +1981,7 @@ Matcher is used to match a part in the output from a protocol.
 Appears in:
 
 
-- <code><a href="#httprequest">http.Request</a>.matchers</code>
-
-- <code><a href="#dnsrequest">dns.Request</a>.matchers</code>
-
-- <code><a href="#filerequest">file.Request</a>.matchers</code>
-
-- <code><a href="#networkrequest">network.Request</a>.matchers</code>
-
-- <code><a href="#headlessrequest">headless.Request</a>.matchers</code>
-
-- <code><a href="#sslrequest">ssl.Request</a>.matchers</code>
-
-- <code><a href="#websocketrequest">websocket.Request</a>.matchers</code>
-
-- <code><a href="#whoisrequest">whois.Request</a>.matchers</code>
+- <code><a href="#httprequest">http.Request</a>.filters</code>
 
 
 
@@ -1745,6 +2270,37 @@ dsl:
 
 <div class="dd">
 
+<code>xpath</code>  <i>[]string</i>
+
+</div>
+<div class="dt">
+
+XPath are the xpath queries expressions that will be evaluated against the response part.
+
+
+
+Examples:
+
+
+```yaml
+# XPath Matcher to check a title
+xpath:
+    - /html/head/title[contains(text(), 'How to Find XPath')]
+```
+
+```yaml
+# XPath Matcher for finding links with target="_blank"
+xpath:
+    - //a[@target="_blank"]
+```
+
+
+</div>
+
+<hr />
+
+<div class="dd">
+
 <code>encoding</code>  <i>string</i>
 
 </div>
@@ -1801,6 +2357,25 @@ Valid values:
 
 <hr />
 
+<div class="dd">
+
+<code>internal</code>  <i>bool</i>
+
+</div>
+<div class="dt">
+
+description: |
+  Internal when true hides the matcher from output. Default is false.
+ It is meant to be used in multiprotocol / flow templates to create internal matcher condition without printing it in output.
+ or other similar use cases.
+ values:
+   - false
+   - true
+
+</div>
+
+<hr />
+
 
 
 
@@ -1843,669 +2418,11 @@ Enum Values:
   - <code>size</code>
 
   - <code>dsl</code>
-</div>
-
-<hr />
-
-
-
-
-
-## extractors.Extractor
-Extractor is used to extract part of response using a regex.
-
-Appears in:
-
-
-- <code><a href="#httprequest">http.Request</a>.extractors</code>
-
-- <code><a href="#dnsrequest">dns.Request</a>.extractors</code>
-
-- <code><a href="#filerequest">file.Request</a>.extractors</code>
-
-- <code><a href="#networkrequest">network.Request</a>.extractors</code>
-
-- <code><a href="#headlessrequest">headless.Request</a>.extractors</code>
-
-- <code><a href="#sslrequest">ssl.Request</a>.extractors</code>
-
-- <code><a href="#websocketrequest">websocket.Request</a>.extractors</code>
-
-- <code><a href="#whoisrequest">whois.Request</a>.extractors</code>
-
-
-
-
-
-<hr />
-
-<div class="dd">
-
-<code>name</code>  <i>string</i>
-
-</div>
-<div class="dt">
-
-Name of the extractor. Name should be lowercase and must not contain
-spaces or underscores (_).
-
-
-
-Examples:
-
-
-```yaml
-name: cookie-extractor
-```
-
-
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>type</code>  <i><a href="#extractortypeholder">ExtractorTypeHolder</a></i>
-
-</div>
-<div class="dt">
-
-Type is the type of the extractor.
-
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>regex</code>  <i>[]string</i>
-
-</div>
-<div class="dt">
-
-Regex contains the regular expression patterns to extract from a part.
-
-Go regex engine does not support lookaheads or lookbehinds, so as a result
-they are also not supported in nuclei.
-
-
-
-Examples:
-
-
-```yaml
-# Braintree Access Token Regex
-regex:
-    - access_token\$production\$[0-9a-z]{16}\$[0-9a-f]{32}
-```
-
-```yaml
-# Wordpress Author Extraction regex
-regex:
-    - Author:(?:[A-Za-z0-9 -\_="]+)?<span(?:[A-Za-z0-9 -\_="]+)?>([A-Za-z0-9]+)<\/span>
-```
-
-
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>group</code>  <i>int</i>
-
-</div>
-<div class="dt">
-
-Group specifies a numbered group to extract from the regex.
-
-
-
-Examples:
-
-
-```yaml
-# Example Regex Group
-group: 1
-```
-
-
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>kval</code>  <i>[]string</i>
-
-</div>
-<div class="dt">
-
-description: |
-   kval contains the key-value pairs present in the HTTP response header.
-   kval extractor can be used to extract HTTP response header and cookie key-value pairs.
-   kval extractor inputs are case-insensitive, and does not support dash (-) in input which can replaced with underscores (_)
- 	 For example, Content-Type should be replaced with content_type
-
-   A list of supported parts is available in docs for request types.
- examples:
-   - name: Extract Server Header From HTTP Response
-     value: >
-       []string{"server"}
-   - name: Extracting value of PHPSESSID Cookie
-     value: >
-       []string{"phpsessid"}
-   - name: Extracting value of Content-Type Cookie
-     value: >
-       []string{"content_type"}
-
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>json</code>  <i>[]string</i>
-
-</div>
-<div class="dt">
-
-JSON allows using jq-style syntax to extract items from json response
-
-
-
-Examples:
-
-
-```yaml
-json:
-    - .[] | .id
-```
-
-```yaml
-json:
-    - .batters | .batter | .[] | .id
-```
-
-
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>xpath</code>  <i>[]string</i>
-
-</div>
-<div class="dt">
-
-XPath allows using xpath expressions to extract items from html response
-
-
-
-Examples:
-
-
-```yaml
-xpath:
-    - /html/body/div/p[2]/a
-```
-
-
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>attribute</code>  <i>string</i>
-
-</div>
-<div class="dt">
-
-Attribute is an optional attribute to extract from response XPath.
-
-
-
-Examples:
-
-
-```yaml
-attribute: href
-```
-
-
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>dsl</code>  <i>[]string</i>
-
-</div>
-<div class="dt">
-
-Extracts using DSL expressions.
-
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>part</code>  <i>string</i>
-
-</div>
-<div class="dt">
-
-Part is the part of the request response to extract data from.
-
-Each protocol exposes a lot of different parts which are well
-documented in docs for each request type.
-
-
-
-Examples:
-
-
-```yaml
-part: body
-```
-
-```yaml
-part: raw
-```
-
-
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>internal</code>  <i>bool</i>
-
-</div>
-<div class="dt">
-
-Internal, when set to true will allow using the value extracted
-in the next request for some protocols (like HTTP).
-
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>case-insensitive</code>  <i>bool</i>
-
-</div>
-<div class="dt">
-
-CaseInsensitive enables case-insensitive extractions. Default is false.
-
-
-Valid values:
-
-
-  - <code>false</code>
-
-  - <code>true</code>
-</div>
-
-<hr />
-
-
-
-
-
-## ExtractorTypeHolder
-ExtractorTypeHolder is used to hold internal type of the extractor
-
-Appears in:
-
-
-- <code><a href="#extractorsextractor">extractors.Extractor</a>.type</code>
-
-
-
-
-
-<hr />
-
-<div class="dd">
-
-<code></code>  <i>ExtractorType</i>
-
-</div>
-<div class="dt">
-
-
-
-
-Enum Values:
-
-
-  - <code>regex</code>
-
-  - <code>kval</code>
 
   - <code>xpath</code>
-
-  - <code>json</code>
-
-  - <code>dsl</code>
 </div>
 
 <hr />
-
-
-
-
-
-## generators.AttackTypeHolder
-AttackTypeHolder is used to hold internal type of the protocol
-
-Appears in:
-
-
-- <code><a href="#httprequest">http.Request</a>.attack</code>
-
-- <code><a href="#networkrequest">network.Request</a>.attack</code>
-
-- <code><a href="#headlessrequest">headless.Request</a>.attack</code>
-
-- <code><a href="#websocketrequest">websocket.Request</a>.attack</code>
-
-
-
-
-
-<hr />
-
-<div class="dd">
-
-<code></code>  <i>AttackType</i>
-
-</div>
-<div class="dt">
-
-
-
-
-Enum Values:
-
-
-  - <code>batteringram</code>
-
-  - <code>pitchfork</code>
-
-  - <code>clusterbomb</code>
-</div>
-
-<hr />
-
-
-
-
-
-## HTTPMethodTypeHolder
-HTTPMethodTypeHolder is used to hold internal type of the HTTP Method
-
-Appears in:
-
-
-- <code><a href="#httprequest">http.Request</a>.method</code>
-
-
-
-
-
-<hr />
-
-<div class="dd">
-
-<code></code>  <i>HTTPMethodType</i>
-
-</div>
-<div class="dt">
-
-
-
-
-Enum Values:
-
-
-  - <code>GET</code>
-
-  - <code>HEAD</code>
-
-  - <code>POST</code>
-
-  - <code>PUT</code>
-
-  - <code>DELETE</code>
-
-  - <code>CONNECT</code>
-
-  - <code>OPTIONS</code>
-
-  - <code>TRACE</code>
-
-  - <code>PATCH</code>
-
-  - <code>PURGE</code>
-
-  - <code>Debug</code>
-</div>
-
-<hr />
-
-
-
-
-
-## fuzz.Rule
-Rule is a single rule which describes how to fuzz the request
-
-Appears in:
-
-
-- <code><a href="#httprequest">http.Request</a>.fuzzing</code>
-
-
-
-
-
-<hr />
-
-<div class="dd">
-
-<code>type</code>  <i>string</i>
-
-</div>
-<div class="dt">
-
-Type is the type of fuzzing rule to perform.
-
-replace replaces the values entirely. prefix prefixes the value. postfix postfixes the value
-and infix places between the values.
-
-
-Valid values:
-
-
-  - <code>replace</code>
-
-  - <code>prefix</code>
-
-  - <code>postfix</code>
-
-  - <code>infix</code>
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>part</code>  <i>string</i>
-
-</div>
-<div class="dt">
-
-Part is the part of request to fuzz.
-
-query fuzzes the query part of url. More parts will be added later.
-
-
-Valid values:
-
-
-  - <code>query</code>
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>mode</code>  <i>string</i>
-
-</div>
-<div class="dt">
-
-Mode is the mode of fuzzing to perform.
-
-single fuzzes one value at a time. multiple fuzzes all values at same time.
-
-
-Valid values:
-
-
-  - <code>single</code>
-
-  - <code>multiple</code>
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>keys</code>  <i>[]string</i>
-
-</div>
-<div class="dt">
-
-Keys is the optional list of key named parameters to fuzz.
-
-
-
-Examples:
-
-
-```yaml
-# Examples of keys
-keys:
-    - url
-    - file
-    - host
-```
-
-
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>keys-regex</code>  <i>[]string</i>
-
-</div>
-<div class="dt">
-
-KeysRegex is the optional list of regex key parameters to fuzz.
-
-
-
-Examples:
-
-
-```yaml
-# Examples of key regex
-keys-regex:
-    - url.*
-```
-
-
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>values</code>  <i>[]string</i>
-
-</div>
-<div class="dt">
-
-Values is the optional list of regex value parameters to fuzz.
-
-
-
-Examples:
-
-
-```yaml
-# Examples of value regex
-values:
-    - https?://.*
-```
-
-
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>fuzz</code>  <i>[]string</i>
-
-</div>
-<div class="dt">
-
-Fuzz is the list of payloads to perform substitutions with.
-
-
-
-Examples:
-
-
-```yaml
-# Examples of fuzz
-fuzz:
-    - '{{ssrf}}'
-    - '{{interactsh-url}}'
-    - example-value
-```
-
-
-</div>
-
-<hr />
-
-
-
-
-
-## SignatureTypeHolder
-SignatureTypeHolder is used to hold internal type of the signature
-
-Appears in:
-
-
-- <code><a href="#httprequest">http.Request</a>.signature</code>
-
-
 
 
 
@@ -2550,58 +2467,6 @@ Part Definitions:
 - <code>ns</code> - NS contains the DNS response NS field
 - <code>raw,body,all</code> - Raw contains the raw DNS response (default)
 - <code>trace</code> - Trace contains trace data for DNS request if enabled
-
-<hr />
-
-<div class="dd">
-
-<code>matchers</code>  <i>[]<a href="#matchersmatcher">matchers.Matcher</a></i>
-
-</div>
-<div class="dt">
-
-Matchers contains the detection mechanism for the request to identify
-whether the request was successful by doing pattern matching
-on request/responses.
-
-Multiple matchers can be combined with `matcher-condition` flag
-which accepts either `and` or `or` as argument.
-
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>extractors</code>  <i>[]<a href="#extractorsextractor">extractors.Extractor</a></i>
-
-</div>
-<div class="dt">
-
-Extractors contains the extraction mechanism for the request to identify
-and extract parts of the response.
-
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>matchers-condition</code>  <i>string</i>
-
-</div>
-<div class="dt">
-
-MatchersCondition is the condition between the matchers. Default is OR.
-
-
-Valid values:
-
-
-  - <code>and</code>
-
-  - <code>or</code>
-</div>
 
 <hr />
 
@@ -2749,6 +2614,63 @@ trace-max-recursion: 100
 
 <div class="dd">
 
+<code>attack</code>  <i><a href="#generatorsattacktypeholder">generators.AttackTypeHolder</a></i>
+
+</div>
+<div class="dt">
+
+Attack is the type of payload combinations to perform.
+
+Batteringram is inserts the same payload into all defined payload positions at once, pitchfork combines multiple payload sets and clusterbomb generates
+permutations and combinations for all payloads.
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>payloads</code>  <i>map[string]interface{}</i>
+
+</div>
+<div class="dt">
+
+Payloads contains any payloads for the current request.
+
+Payloads support both key-values combinations where a list
+of payloads is provided, or optionally a single file can also
+be provided as payload which will be read on run-time.
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>threads</code>  <i>int</i>
+
+</div>
+<div class="dt">
+
+Threads to use when sending iterating over payloads
+
+
+
+Examples:
+
+
+```yaml
+# Send requests using 10 concurrent threads
+threads: 10
+```
+
+
+</div>
+
+<hr />
+
+<div class="dd">
+
 <code>recursion</code>  <i>dns.bool</i>
 
 </div>
@@ -2825,6 +2747,8 @@ Enum Values:
   - <code>CAA</code>
 
   - <code>TLSA</code>
+
+  - <code>ANY</code>
 </div>
 
 <hr />
@@ -2849,8 +2773,6 @@ extractors:
         - amzn\.mws\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
 extensions:
     - all
-archive: false
-mimetype: false
 ```
 
 Part Definitions: 
@@ -2863,58 +2785,6 @@ Part Definitions:
 - <code>path</code> - Path is the path of file on local filesystem
 - <code>type</code> - Type is the type of request made
 - <code>raw,body,all,data</code> - Raw contains the raw file contents
-
-<hr />
-
-<div class="dd">
-
-<code>matchers</code>  <i>[]<a href="#matchersmatcher">matchers.Matcher</a></i>
-
-</div>
-<div class="dt">
-
-Matchers contains the detection mechanism for the request to identify
-whether the request was successful by doing pattern matching
-on request/responses.
-
-Multiple matchers can be combined with `matcher-condition` flag
-which accepts either `and` or `or` as argument.
-
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>extractors</code>  <i>[]<a href="#extractorsextractor">extractors.Extractor</a></i>
-
-</div>
-<div class="dt">
-
-Extractors contains the extraction mechanism for the request to identify
-and extract parts of the response.
-
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>matchers-condition</code>  <i>string</i>
-
-</div>
-<div class="dt">
-
-MatchersCondition is the condition between the matchers. Default is OR.
-
-
-Valid values:
-
-
-  - <code>and</code>
-
-  - <code>or</code>
-</div>
 
 <hr />
 
@@ -3015,6 +2885,32 @@ max-size: 5Mb
 
 <div class="dd">
 
+<code>archive</code>  <i>bool</i>
+
+</div>
+<div class="dt">
+
+elaborates archives
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>mime-type</code>  <i>bool</i>
+
+</div>
+<div class="dt">
+
+enables mime types check
+
+</div>
+
+<hr />
+
+<div class="dd">
+
 <code>no-recursive</code>  <i>bool</i>
 
 </div>
@@ -3037,6 +2933,8 @@ Appears in:
 
 
 - <code><a href="#template">Template</a>.network</code>
+
+- <code><a href="#template">Template</a>.tcp</code>
 
 
 ```yaml
@@ -3142,12 +3040,68 @@ be provided as payload which will be read on run-time.
 
 <div class="dd">
 
+<code>threads</code>  <i>int</i>
+
+</div>
+<div class="dt">
+
+Threads specifies number of threads to use sending requests. This enables Connection Pooling.
+
+Connection: Close attribute must not be used in request while using threads flag, otherwise
+pooling will fail and engine will continue to close connections after requests.
+
+
+
+Examples:
+
+
+```yaml
+# Send requests using 10 concurrent threads
+threads: 10
+```
+
+
+</div>
+
+<hr />
+
+<div class="dd">
+
 <code>inputs</code>  <i>[]<a href="#networkinput">network.Input</a></i>
 
 </div>
 <div class="dt">
 
 Inputs contains inputs for the network socket
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>port</code>  <i>string</i>
+
+</div>
+<div class="dt">
+
+description: |
+   Port is the port to send network requests to. this acts as default port but is overriden if target/input contains
+ non-http(s) ports like 80,8080,8081 etc
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>exclude-ports</code>  <i>string</i>
+
+</div>
+<div class="dt">
+
+description:	|
+	ExcludePorts is the list of ports to exclude from being scanned . It is intended to be used with `Port` field and contains a list of ports which are ignored/skipped
 
 </div>
 
@@ -3199,58 +3153,6 @@ read-all: false
 ```
 
 
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>matchers</code>  <i>[]<a href="#matchersmatcher">matchers.Matcher</a></i>
-
-</div>
-<div class="dt">
-
-Matchers contains the detection mechanism for the request to identify
-whether the request was successful by doing pattern matching
-on request/responses.
-
-Multiple matchers can be combined with `matcher-condition` flag
-which accepts either `and` or `or` as argument.
-
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>extractors</code>  <i>[]<a href="#extractorsextractor">extractors.Extractor</a></i>
-
-</div>
-<div class="dt">
-
-Extractors contains the extraction mechanism for the request to identify
-and extract parts of the response.
-
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>matchers-condition</code>  <i>string</i>
-
-</div>
-<div class="dt">
-
-MatchersCondition is the condition between the matchers. Default is OR.
-
-
-Valid values:
-
-
-  - <code>and</code>
-
-  - <code>or</code>
 </div>
 
 <hr />
@@ -3543,17 +3445,12 @@ StopAtFirstMatch stops the execution of the requests and template as soon as a m
 
 <div class="dd">
 
-<code>matchers</code>  <i>[]<a href="#matchersmatcher">matchers.Matcher</a></i>
+<code>fuzzing</code>  <i>[]<a href="#fuzzrule">fuzz.Rule</a></i>
 
 </div>
 <div class="dt">
 
-Matchers contains the detection mechanism for the request to identify
-whether the request was successful by doing pattern matching
-on request/responses.
-
-Multiple matchers can be combined with `matcher-condition` flag
-which accepts either `and` or `or` as argument.
+Fuzzing describes schema to fuzz headless requests
 
 </div>
 
@@ -3561,13 +3458,12 @@ which accepts either `and` or `or` as argument.
 
 <div class="dd">
 
-<code>extractors</code>  <i>[]<a href="#extractorsextractor">extractors.Extractor</a></i>
+<code>cookie-reuse</code>  <i>bool</i>
 
 </div>
 <div class="dt">
 
-Extractors contains the extraction mechanism for the request to identify
-and extract parts of the response.
+CookieReuse is an optional setting that enables cookie reuse
 
 </div>
 
@@ -3575,20 +3471,13 @@ and extract parts of the response.
 
 <div class="dd">
 
-<code>matchers-condition</code>  <i>string</i>
+<code>disable-cookie</code>  <i>bool</i>
 
 </div>
 <div class="dt">
 
-MatchersCondition is the condition between the matchers. Default is OR.
+DisableCookie is an optional setting that disables cookie reuse
 
-
-Valid values:
-
-
-  - <code>and</code>
-
-  - <code>or</code>
 </div>
 
 <hr />
@@ -3641,7 +3530,7 @@ Name is the name assigned to the headless action.
 
 This can be used to execute code, for instance in browser
 DOM using script action, and get the result in a variable
-which can be matched upon by nuclei. An Example template [here](https://github.com/projectdiscovery/nuclei-templates/blob/master/headless/prototype-pollution-check.yaml).
+which can be matched upon by nuclei. An Example template [here](https://github.com/projectdiscovery/nuclei-templates/blob/main/headless/prototype-pollution-check.yaml).
 
 </div>
 
@@ -3820,52 +3709,13 @@ Part Definitions:
 
 <div class="dd">
 
-<code>matchers</code>  <i>[]<a href="#matchersmatcher">matchers.Matcher</a></i>
+<code>id</code>  <i>string</i>
 
 </div>
 <div class="dt">
 
-Matchers contains the detection mechanism for the request to identify
-whether the request was successful by doing pattern matching
-on request/responses.
+ID is the optional id of the request
 
-Multiple matchers can be combined with `matcher-condition` flag
-which accepts either `and` or `or` as argument.
-
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>extractors</code>  <i>[]<a href="#extractorsextractor">extractors.Extractor</a></i>
-
-</div>
-<div class="dt">
-
-Extractors contains the extraction mechanism for the request to identify
-and extract parts of the response.
-
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>matchers-condition</code>  <i>string</i>
-
-</div>
-<div class="dt">
-
-MatchersCondition is the condition between the matchers. Default is OR.
-
-
-Valid values:
-
-
-  - <code>and</code>
-
-  - <code>or</code>
 </div>
 
 <hr />
@@ -3955,17 +3805,61 @@ Client Cipher Suites  - auto if not specified.
 </div>
 <div class="dt">
 
-Tls Scan Mode - auto if not specified
+description: |
+   Tls Scan Mode - auto if not specified
+ values:
+   - "ctls"
+   - "ztls"
+   - "auto"
+	 - "openssl" # reverts to "auto" is openssl is not installed
 
+</div>
 
-Valid values:
+<hr />
 
+<div class="dd">
 
-  - <code>ctls</code>
+<code>tls_version_enum</code>  <i>bool</i>
 
-  - <code>ztls</code>
+</div>
+<div class="dt">
 
-  - <code>auto</code>
+TLS Versions Enum - false if not specified
+Enumerates supported TLS versions
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>tls_cipher_enum</code>  <i>bool</i>
+
+</div>
+<div class="dt">
+
+TLS Ciphers Enum - false if not specified
+Enumerates supported TLS ciphers
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>tls_cipher_types</code>  <i>[]string</i>
+
+</div>
+<div class="dt">
+
+description: |
+  TLS Cipher types to enumerate
+ values:
+   - "insecure" (default)
+   - "weak"
+   - "secure"
+   - "all"
+
 </div>
 
 <hr />
@@ -3998,52 +3892,13 @@ Part Definitions:
 
 <div class="dd">
 
-<code>matchers</code>  <i>[]<a href="#matchersmatcher">matchers.Matcher</a></i>
+<code>id</code>  <i>string</i>
 
 </div>
 <div class="dt">
 
-Matchers contains the detection mechanism for the request to identify
-whether the request was successful by doing pattern matching
-on request/responses.
+ID is the optional id of the request
 
-Multiple matchers can be combined with `matcher-condition` flag
-which accepts either `and` or `or` as argument.
-
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>extractors</code>  <i>[]<a href="#extractorsextractor">extractors.Extractor</a></i>
-
-</div>
-<div class="dt">
-
-Extractors contains the extraction mechanism for the request to identify
-and extract parts of the response.
-
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>matchers-condition</code>  <i>string</i>
-
-</div>
-<div class="dt">
-
-MatchersCondition is the condition between the matchers. Default is OR.
-
-
-Valid values:
-
-
-  - <code>and</code>
-
-  - <code>or</code>
 </div>
 
 <hr />
@@ -4209,52 +4064,13 @@ Appears in:
 
 <div class="dd">
 
-<code>matchers</code>  <i>[]<a href="#matchersmatcher">matchers.Matcher</a></i>
+<code>id</code>  <i>string</i>
 
 </div>
 <div class="dt">
 
-Matchers contains the detection mechanism for the request to identify
-whether the request was successful by doing pattern matching
-on request/responses.
+ID is the optional id of the request
 
-Multiple matchers can be combined with `matcher-condition` flag
-which accepts either `and` or `or` as argument.
-
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>extractors</code>  <i>[]<a href="#extractorsextractor">extractors.Extractor</a></i>
-
-</div>
-<div class="dt">
-
-Extractors contains the extraction mechanism for the request to identify
-and extract parts of the response.
-
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>matchers-condition</code>  <i>string</i>
-
-</div>
-<div class="dt">
-
-MatchersCondition is the condition between the matchers. Default is OR.
-
-
-Valid values:
-
-
-  - <code>and</code>
-
-  - <code>or</code>
 </div>
 
 <hr />
@@ -4293,31 +4109,231 @@ description: |
 
 
 
-## workflows.WorkflowTemplate
+## code.Request
+Request is a request for the SSL protocol
 
 Appears in:
 
 
-- <code><a href="#template">Template</a>.workflows</code>
-
-- <code><a href="#workflowsworkflowtemplate">workflows.WorkflowTemplate</a>.subtemplates</code>
-
-- <code><a href="#workflowsmatcher">workflows.Matcher</a>.subtemplates</code>
+- <code><a href="#template">Template</a>.code</code>
 
 
 
+Part Definitions: 
 
+
+- <code>type</code> - Type is the type of request made
+- <code>host</code> - Host is the input to the template
+- <code>matched</code> - Matched is the input which was matched upon
 
 <hr />
 
 <div class="dd">
 
-<code>template</code>  <i>string</i>
+<code>id</code>  <i>string</i>
 
 </div>
 <div class="dt">
 
-Template is a single template or directory to execute as part of workflow.
+ID is the optional id of the request
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>engine</code>  <i>[]string</i>
+
+</div>
+<div class="dt">
+
+Engine type
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>args</code>  <i>[]string</i>
+
+</div>
+<div class="dt">
+
+Engine Arguments
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>pattern</code>  <i>string</i>
+
+</div>
+<div class="dt">
+
+Pattern preferred for file name
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>source</code>  <i>string</i>
+
+</div>
+<div class="dt">
+
+Source File/Snippet
+
+</div>
+
+<hr />
+
+
+
+
+
+## javascript.Request
+Request is a request for the javascript protocol
+
+Appears in:
+
+
+- <code><a href="#template">Template</a>.javascript</code>
+
+
+
+Part Definitions: 
+
+
+- <code>type</code> - Type is the type of request made
+- <code>response</code> - Javascript protocol result response
+- <code>host</code> - Host is the input to the template
+- <code>matched</code> - Matched is the input which was matched upon
+
+<hr />
+
+<div class="dd">
+
+<code>id</code>  <i>string</i>
+
+</div>
+<div class="dt">
+
+description: |
+ ID is request id in that protocol
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>init</code>  <i>string</i>
+
+</div>
+<div class="dt">
+
+Init is javascript code to execute after compiling template and before executing it on any target
+This is helpful for preparing payloads or other setup that maybe required for exploits
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>pre-condition</code>  <i>string</i>
+
+</div>
+<div class="dt">
+
+PreCondition is a condition which is evaluated before sending the request.
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>args</code>  <i>map[string]interface{}</i>
+
+</div>
+<div class="dt">
+
+Args contains the arguments to pass to the javascript code.
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>code</code>  <i>string</i>
+
+</div>
+<div class="dt">
+
+Code contains code to execute for the javascript request.
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>timeout</code>  <i>int</i>
+
+</div>
+<div class="dt">
+
+Timeout in seconds is optional timeout for each  javascript script execution (i.e init, pre-condition, code)
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>stop-at-first-match</code>  <i>bool</i>
+
+</div>
+<div class="dt">
+
+StopAtFirstMatch stops processing the request at first match.
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>attack</code>  <i><a href="#generatorsattacktypeholder">generators.AttackTypeHolder</a></i>
+
+</div>
+<div class="dt">
+
+Attack is the type of payload combinations to perform.
+
+Sniper is each payload once, pitchfork combines multiple payload sets and clusterbomb generates
+permutations and combinations for all payloads.
+
+</div>
+
+<hr />
+
+<div class="dd">
+
+<code>threads</code>  <i>int</i>
+
+</div>
+<div class="dt">
+
+Payload concurreny i.e threads for sending requests.
 
 
 
@@ -4325,13 +4341,8 @@ Examples:
 
 
 ```yaml
-# A single template
-template: dns/worksites-detection.yaml
-```
-
-```yaml
-# A template directory
-template: misconfigurations/aem
+# Send requests using 10 concurrent threads
+threads: 10
 ```
 
 
@@ -4341,102 +4352,16 @@ template: misconfigurations/aem
 
 <div class="dd">
 
-<code>tags</code>  <i><a href="#stringslicestringslice">stringslice.StringSlice</a></i>
+<code>payloads</code>  <i>map[string]interface{}</i>
 
 </div>
 <div class="dt">
 
-Tags to run templates based on.
+Payloads contains any payloads for the current request.
 
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>matchers</code>  <i>[]<a href="#workflowsmatcher">workflows.Matcher</a></i>
-
-</div>
-<div class="dt">
-
-Matchers perform name based matching to run subtemplates for a workflow.
-
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>subtemplates</code>  <i>[]<a href="#workflowsworkflowtemplate">workflows.WorkflowTemplate</a></i>
-
-</div>
-<div class="dt">
-
-Subtemplates are run if the `template` field Template matches.
-
-</div>
-
-<hr />
-
-
-
-
-
-## workflows.Matcher
-
-Appears in:
-
-
-- <code><a href="#workflowsworkflowtemplate">workflows.WorkflowTemplate</a>.matchers</code>
-
-
-
-
-
-<hr />
-
-<div class="dd">
-
-<code>name</code>  <i><a href="#stringslicestringslice">stringslice.StringSlice</a></i>
-
-</div>
-<div class="dt">
-
-Name is the name of the items to match.
-
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>condition</code>  <i>string</i>
-
-</div>
-<div class="dt">
-
-Condition is the optional condition between names. By default,
-the condition is assumed to be OR.
-
-
-Valid values:
-
-
-  - <code>and</code>
-
-  - <code>or</code>
-</div>
-
-<hr />
-
-<div class="dd">
-
-<code>subtemplates</code>  <i>[]<a href="#workflowsworkflowtemplate">workflows.WorkflowTemplate</a></i>
-
-</div>
-<div class="dt">
-
-Subtemplates are run if the name of matcher matches.
+Payloads support both key-values combinations where a list
+of payloads is provided, or optionally a single file can also
+be provided as payload which will be read on run-time.
 
 </div>
 
