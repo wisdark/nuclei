@@ -51,6 +51,8 @@ const (
 
 var (
 	MaxBodyRead = int64(1 << 22) // 4MB using shift operator
+	// ErrMissingVars is error occured when variables are missing
+	ErrMissingVars = errors.New("stop execution due to unresolved variables")
 )
 
 // Type returns the type of the protocol request
@@ -135,11 +137,6 @@ func (request *Request) executeRaceRequest(input *contextargs.Context, previous 
 		// execute http request
 		go func(httpRequest *generatedRequest) {
 			defer spmHandler.Release()
-			defer func() {
-				if r := recover(); r != nil {
-					gologger.Verbose().Msgf("[%s] Recovered from panic: %v\n", request.options.TemplateID, r)
-				}
-			}()
 			if spmHandler.FoundFirstMatch() {
 				// stop sending more requests condition is met
 				return
@@ -216,11 +213,6 @@ func (request *Request) executeParallelHTTP(input *contextargs.Context, dynamicV
 		spmHandler.Acquire()
 		go func(httpRequest *generatedRequest) {
 			defer spmHandler.Release()
-			defer func() {
-				if r := recover(); r != nil {
-					gologger.Verbose().Msgf("[%s] Recovered from panic: %v\n", request.options.TemplateID, r)
-				}
-			}()
 			if spmHandler.FoundFirstMatch() {
 				return
 			}
@@ -317,11 +309,6 @@ func (request *Request) executeTurboHTTP(input *contextargs.Context, dynamicValu
 		spmHandler.Acquire()
 		go func(httpRequest *generatedRequest) {
 			defer spmHandler.Release()
-			defer func() {
-				if r := recover(); r != nil {
-					gologger.Verbose().Msgf("[%s] Recovered from panic: %v\n", request.options.TemplateID, r)
-				}
-			}()
 			if spmHandler.FoundFirstMatch() {
 				// skip if first match is found
 				return
@@ -437,7 +424,7 @@ func (request *Request) ExecuteWithResults(input *contextargs.Context, dynamicVa
 			}, generator.currentIndex)
 
 			// If a variable is unresolved, skip all further requests
-			if errors.Is(execReqErr, errStopExecution) {
+			if errors.Is(execReqErr, ErrMissingVars) {
 				return true, nil
 			}
 			if execReqErr != nil {
@@ -484,10 +471,18 @@ func (request *Request) ExecuteWithResults(input *contextargs.Context, dynamicVa
 
 const drainReqSize = int64(8 * 1024)
 
-var errStopExecution = errors.New("stop execution due to unresolved variables")
-
 // executeRequest executes the actual generated request and returns error if occurred
-func (request *Request) executeRequest(input *contextargs.Context, generatedRequest *generatedRequest, previousEvent output.InternalEvent, hasInteractMatchers bool, callback protocols.OutputEventCallback, requestCount int) error {
+func (request *Request) executeRequest(input *contextargs.Context, generatedRequest *generatedRequest, previousEvent output.InternalEvent, hasInteractMatchers bool, processEvent protocols.OutputEventCallback, requestCount int) (err error) {
+
+	// wrap one more callback for validation and fixing event
+	callback := func(event *output.InternalWrappedEvent) {
+		// validateNFixEvent performs necessary validation on generated event
+		// and attempts to fix it , this includes things like making sure
+		// `template-id` is set , `request-url-pattern` is set etc
+		request.validateNFixEvent(input, generatedRequest, err, event)
+		processEvent(event)
+	}
+
 	request.setCustomHeaders(generatedRequest)
 
 	// Try to evaluate any payloads before replacement
@@ -498,12 +493,6 @@ func (request *Request) executeRequest(input *contextargs.Context, generatedRequ
 		finalMap["ip"] = input.MetaInput.CustomIP
 	}
 
-	// we should never evaluate all variables of a template
-	// for payloadName, payloadValue := range generatedRequest.dynamicValues {
-	// 	if data, err := expressions.Evaluate(types.ToString(payloadValue), finalMap); err == nil {
-	// 		generatedRequest.dynamicValues[payloadName] = data
-	// 	}
-	// }
 	for payloadName, payloadValue := range generatedRequest.meta {
 		if data, err := expressions.Evaluate(types.ToString(payloadValue), finalMap); err == nil {
 			generatedRequest.meta[payloadName] = data
@@ -514,7 +503,6 @@ func (request *Request) executeRequest(input *contextargs.Context, generatedRequ
 		resp          *http.Response
 		fromCache     bool
 		dumpedRequest []byte
-		err           error
 	)
 
 	// Dump request for variables checks
@@ -557,12 +545,12 @@ func (request *Request) executeRequest(input *contextargs.Context, generatedRequ
 		if ignoreList := GetVariablesNamesSkipList(generatedRequest.original.Signature.Value); ignoreList != nil {
 			if varErr := expressions.ContainsVariablesWithIgnoreList(ignoreList, dumpedRequestString); varErr != nil && !request.SkipVariablesCheck {
 				gologger.Warning().Msgf("[%s] Could not make http request for %s: %v\n", request.options.TemplateID, input.MetaInput.Input, varErr)
-				return errStopExecution
+				return ErrMissingVars
 			}
 		} else { // Check if are there any unresolved variables. If yes, skip unless overridden by user.
 			if varErr := expressions.ContainsUnresolvedVariables(dumpedRequestString); varErr != nil && !request.SkipVariablesCheck {
 				gologger.Warning().Msgf("[%s] Could not make http request for %s: %v\n", request.options.TemplateID, input.MetaInput.Input, varErr)
-				return errStopExecution
+				return ErrMissingVars
 			}
 		}
 	}
@@ -699,11 +687,15 @@ func (request *Request) executeRequest(input *contextargs.Context, generatedRequ
 			outputEvent["ip"] = httpclientpool.Dialer.GetDialedIP(hostname)
 		}
 
-		event := &output.InternalWrappedEvent{}
-		if request.CompiledOperators != nil && request.CompiledOperators.HasDSL() {
-			event.InternalEvent = outputEvent
+		if len(generatedRequest.interactshURLs) > 0 {
+			// according to logic we only need to trigger a callback if interactsh was used
+			// and request failed in hope that later on oast interaction will be received
+			event := &output.InternalWrappedEvent{}
+			if request.CompiledOperators != nil && request.CompiledOperators.HasDSL() {
+				event.InternalEvent = outputEvent
+			}
+			callback(event)
 		}
-		callback(event)
 		return err
 	}
 
@@ -820,6 +812,14 @@ func (request *Request) executeRequest(input *contextargs.Context, generatedRequ
 			event.UsesInteractsh = true
 		}
 
+		// if requrlpattern is enabled, only then it is reflected in result event else it is empty string
+		// consult @Ice3man543 before changing this logic (context: vuln_hash)
+		if request.options.ExportReqURLPattern {
+			for _, v := range event.Results {
+				v.ReqURLPattern = generatedRequest.requestURLPattern
+			}
+		}
+
 		responseContentType := respChain.Response().Header.Get("Content-Type")
 		isResponseTruncated := request.MaxSize > 0 && respChain.Body().Len() >= request.MaxSize
 		dumpResponse(event, request, respChain.FullResponse().Bytes(), formedURL, responseContentType, isResponseTruncated, input.MetaInput.Input)
@@ -839,6 +839,37 @@ func (request *Request) executeRequest(input *contextargs.Context, generatedRequ
 	}
 	// return project file save error if any
 	return errx
+}
+
+// validateNFixEvent validates and fixes the event
+// it adds any missing template-id and request-url-pattern
+func (request *Request) validateNFixEvent(input *contextargs.Context, gr *generatedRequest, err error, event *output.InternalWrappedEvent) {
+	if event != nil {
+		if event.InternalEvent == nil {
+			event.InternalEvent = make(map[string]interface{})
+			event.InternalEvent["template-id"] = request.options.TemplateID
+		}
+		// add the request URL pattern to the event
+		event.InternalEvent[ReqURLPatternKey] = gr.requestURLPattern
+		if event.InternalEvent["host"] == nil {
+			event.InternalEvent["host"] = input.MetaInput.Input
+		}
+		if event.InternalEvent["template-id"] == nil {
+			event.InternalEvent["template-id"] = request.options.TemplateID
+		}
+		if event.InternalEvent["type"] == nil {
+			event.InternalEvent["type"] = request.Type().String()
+		}
+		if event.InternalEvent["template-path"] == nil {
+			event.InternalEvent["template-path"] = request.options.TemplatePath
+		}
+		if event.InternalEvent["template-info"] == nil {
+			event.InternalEvent["template-info"] = request.options.TemplateInfo
+		}
+		if err != nil {
+			event.InternalEvent["error"] = err.Error()
+		}
+	}
 }
 
 // handleSignature of the http request
