@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/invopop/jsonschema"
 	json "github.com/json-iterator/go"
 	"github.com/pkg/errors"
 
@@ -19,6 +20,7 @@ import (
 	httputil "github.com/projectdiscovery/nuclei/v3/pkg/protocols/utils/http"
 	"github.com/projectdiscovery/rawhttp"
 	"github.com/projectdiscovery/retryablehttp-go"
+	"github.com/projectdiscovery/utils/env"
 	fileutil "github.com/projectdiscovery/utils/file"
 )
 
@@ -219,6 +221,29 @@ type Request struct {
 	fuzzPreConditionOperator matchers.ConditionType `yaml:"-" json:"-"`
 }
 
+func (e Request) JSONSchemaExtend(schema *jsonschema.Schema) {
+	headersSchema, ok := schema.Properties.Get("headers")
+	if !ok {
+		return
+	}
+	headersSchema.PatternProperties = map[string]*jsonschema.Schema{
+		".*": {
+			OneOf: []*jsonschema.Schema{
+				{
+					Type: "string",
+				},
+				{
+					Type: "integer",
+				},
+				{
+					Type: "boolean",
+				},
+			},
+		},
+	}
+	headersSchema.Ref = ""
+}
+
 // Options returns executer options for http request
 func (r *Request) Options() *protocols.ExecutorOptions {
 	return r.options
@@ -416,7 +441,11 @@ func (request *Request) Compile(options *protocols.ExecutorOptions) error {
 			request.Threads = protocolstate.GuardThreadsOrDefault(request.Threads)
 		}
 		// if we have payloads, adjust threads if none specified
-		request.Threads = options.GetThreadsForNPayloadRequests(request.Requests(), request.Threads)
+		// We only do this in case we have more payload requests than the
+		// specified concurrency threshold.
+		if request.generator.NewIterator().Total() > PayloadAutoConcurrencyThreshold {
+			request.Threads = options.GetThreadsForNPayloadRequests(request.Requests(), request.Threads)
+		}
 	}
 
 	return nil
@@ -442,4 +471,12 @@ func (request *Request) Requests() int {
 		return requests
 	}
 	return len(request.Path)
+}
+
+// PayloadAutoConcurrencyThreshold is the threshold for auto adjusting concurrency
+// for payloads in a template.
+var PayloadAutoConcurrencyThreshold int
+
+func init() {
+	PayloadAutoConcurrencyThreshold = env.GetEnvOrDefault[int]("NUCLEI_PAYLOAD_AUTO_CONCURRENCY_THRESHOLD", 100)
 }
