@@ -15,6 +15,7 @@ import (
 	errorutil "github.com/projectdiscovery/utils/errors"
 	fileutil "github.com/projectdiscovery/utils/file"
 	folderutil "github.com/projectdiscovery/utils/folder"
+	unitutils "github.com/projectdiscovery/utils/unit"
 )
 
 var (
@@ -66,8 +67,8 @@ type Options struct {
 	IncludeIds goflags.StringSlice
 	// ExcludeIds contains templates ids to not be executed
 	ExcludeIds goflags.StringSlice
-
-	InternalResolversList []string // normalized from resolvers flag as well as file provided.
+	// InternalResolversList is the list of internal resolvers to use
+	InternalResolversList []string
 	// ProjectPath allows nuclei to use a user defined project folder
 	ProjectPath string
 	// InteractshURL is the URL for the interactsh server.
@@ -132,7 +133,10 @@ type Options struct {
 	Retries int
 	// Rate-Limit is the maximum number of requests per specified target
 	RateLimit int
+	// Rate Limit Duration interval between burst resets
+	RateLimitDuration time.Duration
 	// Rate-Limit is the maximum number of requests per minute for specified target
+	// Deprecated: Use RateLimitDuration - automatically set Rate Limit Duration to 60 seconds
 	RateLimitMinute int
 	// PageTimeout is the maximum time to wait for a page in seconds
 	PageTimeout int
@@ -222,6 +226,8 @@ type Options struct {
 	TemplateDisplay bool
 	// TemplateList lists available templates
 	TemplateList bool
+	// TemplateList lists available tags
+	TagList bool
 	// HangMonitor enables nuclei hang monitoring
 	HangMonitor bool
 	// Stdin specifies whether stdin input was given to the process
@@ -286,6 +292,8 @@ type Options struct {
 	ResponseReadSize int
 	// ResponseSaveSize is the maximum size of response to save
 	ResponseSaveSize int
+	// ResponseReadTimeout is response read timeout in seconds
+	ResponseReadTimeout time.Duration
 	// Health Check
 	HealthCheck bool
 	// Time to wait between each input read operation before closing the stream
@@ -356,6 +364,12 @@ type Options struct {
 	FuzzingMode string
 	// TlsImpersonate enables TLS impersonation
 	TlsImpersonate bool
+	// DisplayFuzzPoints enables display of fuzz points for fuzzing
+	DisplayFuzzPoints bool
+	// FuzzAggressionLevel is the level of fuzzing aggression (low, medium, high.)
+	FuzzAggressionLevel string
+	// FuzzParamFrequency is the frequency of fuzzing parameters
+	FuzzParamFrequency int
 	// CodeTemplateSignaturePublicKey is the custom public key used to verify the template signature (algorithm is automatically inferred from the length)
 	CodeTemplateSignaturePublicKey string
 	// CodeTemplateSignatureAlgorithm specifies the sign algorithm (rsa, ecdsa)
@@ -370,6 +384,8 @@ type Options struct {
 	EnableCloudUpload bool
 	// ScanID is the scan ID to use for cloud upload
 	ScanID string
+	// ScanName is the name of the scan to be uploaded
+	ScanName string
 	// JsConcurrency is the number of concurrent js routines to run
 	JsConcurrency int
 	// SecretsFile is file containing secrets for nuclei
@@ -382,8 +398,14 @@ type Options struct {
 	SkipFormatValidation bool
 	// PayloadConcurrency is the number of concurrent payloads to run per template
 	PayloadConcurrency int
+	// ProbeConcurrency is the number of concurrent http probes to run with httpx
+	ProbeConcurrency int
 	// Dast only runs DAST templates
 	DAST bool
+	// HttpApiEndpoint is the experimental http api endpoint
+	HttpApiEndpoint string
+	// ListTemplateProfiles lists all available template profiles
+	ListTemplateProfiles bool
 }
 
 // ShouldLoadResume resume file
@@ -410,15 +432,19 @@ func (options *Options) HasClientCertificates() bool {
 func DefaultOptions() *Options {
 	return &Options{
 		RateLimit:               150,
+		RateLimitDuration:       time.Second,
 		BulkSize:                25,
 		TemplateThreads:         25,
 		HeadlessBulkSize:        10,
+		PayloadConcurrency:      25,
 		HeadlessTemplateThreads: 10,
+		ProbeConcurrency:        50,
 		Timeout:                 5,
 		Retries:                 1,
 		MaxHostError:            30,
-		ResponseReadSize:        10 * 1024 * 1024,
-		ResponseSaveSize:        1024 * 1024,
+		ResponseReadSize:        10 * unitutils.Mega,
+		ResponseSaveSize:        unitutils.Mega,
+		ResponseReadTimeout:     5 * time.Second,
 	}
 }
 

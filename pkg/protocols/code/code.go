@@ -32,6 +32,7 @@ import (
 	templateTypes "github.com/projectdiscovery/nuclei/v3/pkg/templates/types"
 	"github.com/projectdiscovery/nuclei/v3/pkg/types"
 	contextutil "github.com/projectdiscovery/utils/context"
+	"github.com/projectdiscovery/utils/errkit"
 	errorutil "github.com/projectdiscovery/utils/errors"
 )
 
@@ -41,7 +42,10 @@ const (
 )
 
 var (
+	// pythonEnvRegexCompiled is the compiled regex for python environment variables
 	pythonEnvRegexCompiled = regexp.MustCompile(pythonEnvRegex)
+	// ErrCodeExecutionDeadline is the error returned when alloted time for script execution exceeds
+	ErrCodeExecutionDeadline = errkit.New("code execution deadline exceeded").SetKind(errkit.ErrKindDeadline).Build()
 )
 
 // Request is a request for the SSL protocol
@@ -160,6 +164,8 @@ func (request *Request) ExecuteWithResults(input *contextargs.Context, dynamicVa
 	if request.options.HasTemplateCtx(input.MetaInput) {
 		allvars = generators.MergeMaps(allvars, request.options.GetTemplateCtx(input.MetaInput).GetAll())
 	}
+	// add dynamic and previous variables
+	allvars = generators.MergeMaps(allvars, dynamicValues, previous)
 	// optionvars are vars passed from CLI or env variables
 	optionVars := generators.BuildPayloadFromOptions(request.options.Options)
 	variablesMap := request.options.Variables.Evaluate(allvars)
@@ -197,6 +203,7 @@ func (request *Request) ExecuteWithResults(input *contextargs.Context, dynamicVa
 				Source:   &request.PreCondition,
 				Callback: registerPreConditionFunctions,
 				Cleanup:  cleanUpPreConditionFunctions,
+				Context:  input.Context(),
 			})
 		if err != nil {
 			return errorutil.NewWithTag(request.TemplateID, "could not execute pre-condition: %s", err)
@@ -211,7 +218,7 @@ func (request *Request) ExecuteWithResults(input *contextargs.Context, dynamicVa
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+	ctx, cancel := context.WithTimeoutCause(input.Context(), time.Duration(timeout)*time.Second, ErrCodeExecutionDeadline)
 	defer cancel()
 	// Note: we use contextutil despite the fact that gozero accepts context as argument
 	gOutput, err := contextutil.ExecFuncWithTwoReturns(ctx, func() (*gozerotypes.Result, error) {
