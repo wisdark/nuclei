@@ -19,6 +19,7 @@ import (
 
 	"github.com/projectdiscovery/fastdialer/fastdialer"
 	"github.com/projectdiscovery/gologger"
+	"github.com/projectdiscovery/nuclei/v3/pkg/fuzz/analyzers"
 	"github.com/projectdiscovery/nuclei/v3/pkg/operators"
 	"github.com/projectdiscovery/nuclei/v3/pkg/output"
 	"github.com/projectdiscovery/nuclei/v3/pkg/protocols"
@@ -483,7 +484,7 @@ func (request *Request) ExecuteWithResults(input *contextargs.Context, dynamicVa
 			request.options.RateLimitTake()
 
 			ctx := request.newContext(input)
-			ctxWithTimeout, cancel := context.WithTimeoutCause(ctx, httpclientpool.GetHttpTimeout(request.options.Options), ErrHttpEngineRequestDeadline)
+			ctxWithTimeout, cancel := context.WithTimeoutCause(ctx, request.options.Options.GetTimeouts().HttpTimeout, ErrHttpEngineRequestDeadline)
 			defer cancel()
 
 			generatedHttpRequest, err := generator.Make(ctxWithTimeout, input, data, payloads, dynamicValue)
@@ -689,7 +690,7 @@ func (request *Request) executeRequest(input *contextargs.Context, generatedRequ
 	}
 
 	// === apply auth strategies ===
-	if generatedRequest.request != nil {
+	if generatedRequest.request != nil && !request.SkipSecretFile {
 		generatedRequest.ApplyAuth(request.options.AuthProvider)
 	}
 
@@ -770,7 +771,7 @@ func (request *Request) executeRequest(input *contextargs.Context, generatedRequ
 
 			// check for cookie related configuration
 			if input.CookieJar != nil {
-				connConfiguration := request.connConfiguration
+				connConfiguration := request.connConfiguration.Clone()
 				connConfiguration.Connection.SetCookieJar(input.CookieJar)
 				modifiedConfig = connConfiguration
 			}
@@ -778,7 +779,8 @@ func (request *Request) executeRequest(input *contextargs.Context, generatedRequ
 			updatedTimeout, ok := generatedRequest.request.Context().Value(httpclientpool.WithCustomTimeout{}).(httpclientpool.WithCustomTimeout)
 			if ok {
 				if modifiedConfig == nil {
-					modifiedConfig = request.connConfiguration
+					connConfiguration := request.connConfiguration.Clone()
+					modifiedConfig = connConfiguration
 				}
 				modifiedConfig.ResponseHeaderTimeout = updatedTimeout.Timeout
 			}
@@ -926,7 +928,25 @@ func (request *Request) executeRequest(input *contextargs.Context, generatedRequ
 				matchedURL = responseURL
 			}
 		}
+
 		finalEvent := make(output.InternalEvent)
+
+		if request.Analyzer != nil {
+			analyzer := analyzers.GetAnalyzer(request.Analyzer.Name)
+			analysisMatched, analysisDetails, err := analyzer.Analyze(&analyzers.Options{
+				FuzzGenerated:      generatedRequest.fuzzGeneratedRequest,
+				HttpClient:         request.httpClient,
+				ResponseTimeDelay:  duration,
+				AnalyzerParameters: request.Analyzer.Parameters,
+			})
+			if err != nil {
+				gologger.Warning().Msgf("Could not analyze response: %v\n", err)
+			}
+			if analysisMatched {
+				finalEvent["analyzer_details"] = analysisDetails
+				finalEvent["analyzer"] = true
+			}
+		}
 
 		outputEvent := request.responseToDSLMap(respChain.Response(), input.MetaInput.Input, matchedURL, convUtil.String(dumpedRequest), respChain.FullResponse().String(), respChain.Body().String(), respChain.Headers().String(), duration, generatedRequest.meta)
 		// add response fields to template context and merge templatectx variables to output event
@@ -941,7 +961,11 @@ func (request *Request) executeRequest(input *contextargs.Context, generatedRequ
 		if input.MetaInput.CustomIP != "" {
 			outputEvent["ip"] = input.MetaInput.CustomIP
 		} else {
-			outputEvent["ip"] = protocolstate.Dialer.GetDialedIP(hostname)
+			dialer := protocolstate.GetDialer()
+			if dialer != nil {
+				outputEvent["ip"] = dialer.GetDialedIP(hostname)
+			}
+
 			// try getting cname
 			request.addCNameIfAvailable(hostname, outputEvent)
 		}
@@ -968,11 +992,20 @@ func (request *Request) executeRequest(input *contextargs.Context, generatedRequ
 		// prune signature internal values if any
 		request.pruneSignatureInternalValues(generatedRequest.meta)
 
-		event := eventcreator.CreateEventWithAdditionalOptions(request, generators.MergeMaps(generatedRequest.dynamicValues, finalEvent), request.options.Options.Debug || request.options.Options.DebugResponse, func(internalWrappedEvent *output.InternalWrappedEvent) {
+		interimEvent := generators.MergeMaps(generatedRequest.dynamicValues, finalEvent)
+		isDebug := request.options.Options.Debug || request.options.Options.DebugResponse
+		event := eventcreator.CreateEventWithAdditionalOptions(request, interimEvent, isDebug, func(internalWrappedEvent *output.InternalWrappedEvent) {
 			internalWrappedEvent.OperatorsResult.PayloadValues = generatedRequest.meta
 		})
+
 		if hasInteractMatchers {
 			event.UsesInteractsh = true
+		}
+
+		if request.options.GlobalMatchers.HasMatchers() {
+			request.options.GlobalMatchers.Match(interimEvent, request.Match, request.Extract, isDebug, func(event output.InternalEvent, result *operators.Result) {
+				callback(eventcreator.CreateEventWithOperatorResults(request, event, result))
+			})
 		}
 
 		// if requrlpattern is enabled, only then it is reflected in result event else it is empty string
@@ -1037,6 +1070,10 @@ func (request *Request) validateNFixEvent(input *contextargs.Context, gr *genera
 
 // addCNameIfAvailable adds the cname to the event if available
 func (request *Request) addCNameIfAvailable(hostname string, outputEvent map[string]interface{}) {
+	if protocolstate.Dialer == nil {
+		return
+	}
+
 	data, err := protocolstate.Dialer.GetDNSData(hostname)
 	if err == nil {
 		switch len(data.CNAME) {
@@ -1083,10 +1120,15 @@ func (request *Request) setCustomHeaders(req *generatedRequest) {
 			req.rawRequest.Headers[k] = v
 		} else {
 			kk, vv := strings.TrimSpace(k), strings.TrimSpace(v)
-			req.request.Header.Set(kk, vv)
+			// NOTE(dwisiswant0): Do we really not need to convert it first into
+			// lowercase?
 			if kk == "Host" {
 				req.request.Host = vv
+
+				continue
 			}
+
+			req.request.Header[kk] = []string{vv}
 		}
 	}
 }
@@ -1163,14 +1205,14 @@ func (request *Request) markUnresponsiveAddress(input *contextargs.Context, err 
 		return
 	}
 	if request.options.HostErrorsCache != nil {
-		request.options.HostErrorsCache.MarkFailed(input, err)
+		request.options.HostErrorsCache.MarkFailed(request.options.ProtocolType.String(), input, err)
 	}
 }
 
 // isUnresponsiveAddress checks if the error is a unreponsive based on its execution history
 func (request *Request) isUnresponsiveAddress(input *contextargs.Context) bool {
 	if request.options.HostErrorsCache != nil {
-		return request.options.HostErrorsCache.Check(input)
+		return request.options.HostErrorsCache.Check(request.options.ProtocolType.String(), input)
 	}
 	return false
 }

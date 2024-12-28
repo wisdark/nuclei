@@ -78,7 +78,7 @@ func (i *Integration) CreateIssue(event *output.ResultEvent) (*filters.CreateIss
 	if label := i.options.IssueLabel; label != "" {
 		labels = append(labels, label)
 	}
-	customLabels := gitlab.Labels(labels)
+	customLabels := gitlab.LabelOptions(labels)
 	assigneeIDs := []int{i.userID}
 	if i.options.DuplicateIssueCheck {
 		searchIn := "title"
@@ -101,13 +101,12 @@ func (i *Integration) CreateIssue(event *output.ResultEvent) (*filters.CreateIss
 			}
 			if issue.State == "closed" {
 				reopen := "reopen"
-				_, resp, err := i.client.Issues.UpdateIssue(i.options.ProjectName, issue.IID, &gitlab.UpdateIssueOptions{
+				_, _, err := i.client.Issues.UpdateIssue(i.options.ProjectName, issue.IID, &gitlab.UpdateIssueOptions{
 					StateEvent: &reopen,
 				})
-				fmt.Sprintln(resp, err)
-			}
-			if err != nil {
-				return nil, err
+				if err != nil {
+					return nil, err
+				}
 			}
 			return &filters.CreateIssueResponse{
 				IssueID:  strconv.FormatInt(int64(issue.ID), 10),

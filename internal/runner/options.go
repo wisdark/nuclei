@@ -19,7 +19,6 @@ import (
 	"github.com/projectdiscovery/gologger/levels"
 	"github.com/projectdiscovery/nuclei/v3/pkg/catalog/config"
 	"github.com/projectdiscovery/nuclei/v3/pkg/protocols/common/protocolinit"
-	"github.com/projectdiscovery/nuclei/v3/pkg/protocols/common/protocolstate"
 	"github.com/projectdiscovery/nuclei/v3/pkg/protocols/common/utils/vardump"
 	"github.com/projectdiscovery/nuclei/v3/pkg/protocols/headless/engine"
 	"github.com/projectdiscovery/nuclei/v3/pkg/reporting"
@@ -69,6 +68,7 @@ func ParseOptions(options *types.Options) {
 
 	if options.ShowVarDump {
 		vardump.EnableVarDump = true
+		vardump.Limit = options.VarDumpLimit
 	}
 	if options.ShowActions {
 		gologger.Info().Msgf("Showing available headless actions: ")
@@ -115,12 +115,7 @@ func ParseOptions(options *types.Options) {
 	// Load the resolvers if user asked for them
 	loadResolvers(options)
 
-	err := protocolstate.Init(options)
-	if err != nil {
-		gologger.Fatal().Msgf("Could not initialize protocol state: %s\n", err)
-	}
-
-	err = protocolinit.Init(options)
+	err := protocolinit.Init(options)
 	if err != nil {
 		gologger.Fatal().Msgf("Could not initialize protocols: %s\n", err)
 	}
@@ -309,10 +304,17 @@ func createReportingOptions(options *types.Options) (*reporting.Options, error) 
 			OmitRaw: options.OmitRawRequests,
 		}
 	}
+	// Combine options.
 	if options.JSONLExport != "" {
-		reportingOptions.JSONLExporter = &jsonl.Options{
-			File:    options.JSONLExport,
-			OmitRaw: options.OmitRawRequests,
+		// Combine the CLI options with the config file options with the CLI options taking precedence
+		if reportingOptions.JSONLExporter != nil {
+			reportingOptions.JSONLExporter.File = options.JSONLExport
+			reportingOptions.JSONLExporter.OmitRaw = options.OmitRawRequests
+		} else {
+			reportingOptions.JSONLExporter = &jsonl.Options{
+				File:    options.JSONLExport,
+				OmitRaw: options.OmitRawRequests,
+			}
 		}
 	}
 

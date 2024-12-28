@@ -380,6 +380,31 @@ func WithSandboxOptions(allowLocalFileAccess bool, restrictLocalNetworkAccess bo
 func EnableCodeTemplates() NucleiSDKOptions {
 	return func(e *NucleiEngine) error {
 		e.opts.EnableCodeTemplates = true
+		e.opts.EnableSelfContainedTemplates = true
+		return nil
+	}
+}
+
+// EnableSelfContainedTemplates allows loading/executing self-contained templates
+func EnableSelfContainedTemplates() NucleiSDKOptions {
+	return func(e *NucleiEngine) error {
+		e.opts.EnableSelfContainedTemplates = true
+		return nil
+	}
+}
+
+// EnableGlobalMatchersTemplates allows loading/executing global-matchers templates
+func EnableGlobalMatchersTemplates() NucleiSDKOptions {
+	return func(e *NucleiEngine) error {
+		e.opts.EnableGlobalMatchersTemplates = true
+		return nil
+	}
+}
+
+// EnableFileTemplates allows loading/executing file protocol templates
+func EnableFileTemplates() NucleiSDKOptions {
+	return func(e *NucleiEngine) error {
+		e.opts.EnableFileTemplates = true
 		return nil
 	}
 }
@@ -392,10 +417,30 @@ func WithHeaders(headers []string) NucleiSDKOptions {
 	}
 }
 
+// WithVars allows setting custom variables to use in templates/workflows context
+func WithVars(vars []string) NucleiSDKOptions {
+	// Create a goflags.RuntimeMap
+	runtimeVars := goflags.RuntimeMap{}
+	for _, v := range vars {
+		err := runtimeVars.Set(v)
+		if err != nil {
+			return func(e *NucleiEngine) error {
+				return err
+			}
+		}
+	}
+
+	return func(e *NucleiEngine) error {
+		e.opts.Vars = runtimeVars
+		return nil
+	}
+}
+
 // EnablePassiveMode allows enabling passive HTTP response processing mode
 func EnablePassiveMode() NucleiSDKOptions {
 	return func(e *NucleiEngine) error {
 		e.opts.OfflineHTTP = true
+		e.opts.DisableHTTPProbe = true
 		return nil
 	}
 }
@@ -437,6 +482,14 @@ func SignedTemplatesOnly() NucleiSDKOptions {
 func WithCatalog(cat catalog.Catalog) NucleiSDKOptions {
 	return func(e *NucleiEngine) error {
 		e.catalog = cat
+		return nil
+	}
+}
+
+// DisableUpdateCheck disables nuclei update check
+func DisableUpdateCheck() NucleiSDKOptions {
+	return func(e *NucleiEngine) error {
+		DefaultConfig.DisableUpdateCheck()
 		return nil
 	}
 }
